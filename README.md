@@ -53,6 +53,9 @@ dotnet test                        # 单元测试(ShellLogic 策略)
 **Q:窗口一直显示"正在启动 dsh 服务…"?**
 服务 90 秒内未就绪(常见于 npx 首次下载慢)。设置 `DSH_NPM_REGISTRY` 镜像后,托盘菜单「重启 dsh 服务」。
 
+**Q:网页里"选择目录"报 `directory picker failed: spawn C:\Program Files\nodejs\node.exe ENOENT`?**
+通常是残留的旧 dsh 进程占着 3080 端口(例如升级 Node.js 前的 32 位旧服务,spawn 位数不匹配的新 node.exe 会报 ENOENT)。托盘菜单「重启 dsh 服务」即可:壳会结束占用端口的残留进程并重新拉起。确认 Node.js 已安装后重试。
+
 ## 环境变量
 
 | 变量 | 作用 |

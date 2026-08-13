@@ -178,6 +178,14 @@ public sealed class DshProcessManager : IDisposable
         }
         Log.Info("停止 dsh 服务");
         KillOwnProcess();
+        // 端口可能被残留的旧 dsh 进程占用(非本壳拉起的,例如升级 Node.js 前的
+        // 32 位旧服务仍占着 3080)。这类进程 spawn 新 node.exe 会报 ENOENT(位数不匹配),
+        // 一并结束,保证"停止/重启"真正生效。
+        if (FindPortPid(Port) is int owner)
+        {
+            Log.Info($"端口 {Port} 仍被 PID {owner} 占用,结束该残留进程");
+            KillPidTree(owner);
+        }
         await WaitPortClosedAsync(TimeSpan.FromSeconds(10));
         lock (_gate)
         {
@@ -288,6 +296,57 @@ public sealed class DshProcessManager : IDisposable
         }
         KillOwnProcess();
         CloseJob();
+    }
+
+    // ---- 端口占用进程清理:结束残留的旧 dsh 进程(停止/重启服务时) ----
+
+    /// <summary>用 netstat 查找监听指定端口的进程 PID。</summary>
+    private static int? FindPortPid(int port)
+    {
+        try
+        {
+            using var p = Process.Start(new ProcessStartInfo("netstat.exe", "-ano")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+            if (p is null) return null;
+            var output = p.StandardOutput.ReadToEnd();
+            p.WaitForExit(3000);
+            var marker = $":{port}";
+            foreach (var line in output.Split('\n'))
+            {
+                if (!line.Contains(marker, StringComparison.OrdinalIgnoreCase)) continue;
+                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                // 行格式: TCP  127.0.0.1:3080  0.0.0.0:0  LISTENING  <pid>
+                if (parts.Length >= 5
+                    && parts[0].StartsWith("TCP", StringComparison.OrdinalIgnoreCase)
+                    && parts[^2].Equals("LISTENING", StringComparison.OrdinalIgnoreCase)
+                    && int.TryParse(parts[^1], out var pid) && pid > 0)
+                    return pid;
+            }
+        }
+        catch { /* 解析失败时降级 */ }
+        return null;
+    }
+
+    /// <summary>结束指定 PID 及其子进程树(taskkill /T /F)。</summary>
+    private static void KillPidTree(int pid)
+    {
+        try
+        {
+            using var p = Process.Start(new ProcessStartInfo("taskkill.exe", $"/PID {pid} /T /F")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+            p?.WaitForExit(5000);
+        }
+        catch { /* 进程已退出等情况忽略 */ }
     }
 
     // ---- Job Object:壳进程退出(含任务管理器强杀)时,系统自动终止 job 内的 dsh 进程 ----
