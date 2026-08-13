@@ -62,7 +62,7 @@ dotnet test                        # 单元测试(ShellLogic 策略)
 
 ## 免责声明
 
-本仓库是**独立的第三方工具**,与 DeepSeek / DeepSeek AI 官方无关。[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(`dsh`)是官方项目(MIT)。窗口图标使用了 DeepSeek 品牌标识,版权归 DeepSeek 所有,仅作个人本地使用。
+本仓库是**独立的第三方工具**,与 DeepSeek / DeepSeek AI 官方无关。[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(`dsh`)是官方项目(MIT)。窗口图标使用了 DeepSeek 品牌标识,版权归 DeepSeek 所有,如构成侵权请联系我删除。
 
 ## 许可证
 
@@ -90,4 +90,4 @@ dotnet test                        # 单元测试(ShellLogic 策略)
 
 ### Disclaimer & License
 
-Independent third-party tool, not affiliated with DeepSeek / DeepSeek AI. [MIT](LICENSE) © mrbbbaixue.
+Independent third-party tool, not affiliated with DeepSeek / DeepSeek AI. The app icon uses the DeepSeek brand mark, whose copyright belongs to DeepSeek; if this constitutes infringement, please contact me to have it removed. [MIT](LICENSE) © mrbbbaixue.
