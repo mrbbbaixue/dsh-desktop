@@ -9,9 +9,9 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
@@ -22,7 +22,7 @@ jobs:
         run: dotnet publish src/DshDesktop -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o dist
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: DshDesktop-win-x64
           path: dist/DshDesktop.exe
