@@ -6,26 +6,34 @@ namespace DshDesktop;
 
 /// <summary>
 /// 应用入口:单实例、托盘生命周期、dsh 进程管理、主窗口。
-/// 窗口关闭时隐藏到托盘(服务常驻),托盘"退出"才真正退出并停止服务。
+/// - 窗口懒创建:开机自启(--minimized)时后台运行,不创建窗口、不抢前台;托盘"打开窗口"才创建
+/// - 窗口关闭时隐藏到托盘(服务常驻),托盘"退出"才真正退出并停止服务
+/// - 注销/关机(SessionEnding)时停止 dsh,避免子进程残留
 /// </summary>
 public partial class App : Application
 {
+    private readonly string _url;
+    private readonly int _port;
     private SingleInstance? _single;
     private DshProcessManager? _manager;
     private TrayIcon? _tray;
     private MainWindow? _window;
     private bool _exitRequested;
 
+    public App()
+    {
+        (_url, _port) = ShellLogic.ResolveTarget(Environment.GetEnvironmentVariable("DSH_WEB_URL"));
+        // 设置 DSH_WEB_URL 时视为"外部托管服务",壳不再自动拉起/停止 dsh。
+        var externalManaged = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DSH_WEB_URL"));
+        _manager = new DshProcessManager(_url, _port, externalManaged);
+    }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
-        var (url, port) = ShellLogic.ResolveTarget(Environment.GetEnvironmentVariable("DSH_WEB_URL"));
-        // 设置 DSH_WEB_URL 时视为"外部托管服务",壳不再自动拉起/停止 dsh。
-        var externalManaged = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DSH_WEB_URL"));
-
         // 单实例:按目标端口隔离,重复启动只把已开窗口带到前台。
-        _single = new SingleInstance($"Local\\DshDesktop.SingleInstance.{port}");
+        _single = new SingleInstance($"Local\\DshDesktop.SingleInstance.{_port}");
         if (!_single.IsFirst)
         {
             SingleInstance.ActivateExisting("DeepSeek Harness");
@@ -34,38 +42,42 @@ public partial class App : Application
         }
 
         Log.Init();
-        Log.Info($"DshDesktop 启动: url={url} externalManaged={externalManaged} args={string.Join(' ', e.Args)}");
+        Log.Info($"DshDesktop 启动: url={_url} args={string.Join(' ', e.Args)}");
 
-        _manager = new DshProcessManager(url, port, externalManaged);
-        _manager.StateChanged += state =>
+        _manager!.StateChanged += state =>
         {
             // 服务就绪且窗口可见 → 刷新页面(覆盖:托盘手动重启、崩溃自动重启)
             if (state == DshProcessManager.ServiceState.Running)
                 Dispatcher.InvokeAsync(() => _window?.ReloadWhenReadyAsync());
         };
 
-        _window = new MainWindow(url, _manager);
         _tray = new TrayIcon(_manager, openWindow: ShowMainWindow, exitApp: RequestExit);
         _tray.Show();
 
-        // 点关闭按钮 → 隐藏到托盘,进程与窗口对象都保留
-        _window.Closing += (_, ev) =>
-        {
-            if (_exitRequested) return;
-            ev.Cancel = true;
-            _window.Hide();
-        };
-
-        if (!e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase))
+        // 开机自启(--minimized):不创建窗口,托盘常驻、服务后台拉起,绝不抢前台
+        var minimized = e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase);
+        if (!minimized)
             ShowMainWindow();
 
         // 后台拉起 dsh 服务(未启动时)
         _ = _manager.EnsureRunningAsync();
     }
 
+    /// <summary>显示主窗口;首次调用时懒创建(后台自启时不占窗口资源)。</summary>
     private void ShowMainWindow()
     {
-        if (_window is null) return;
+        if (_manager is null) return;
+        if (_window is null)
+        {
+            _window = new MainWindow(_url, _manager);
+            // 点关闭按钮 → 隐藏到托盘,进程与窗口对象都保留
+            _window.Closing += (_, ev) =>
+            {
+                if (_exitRequested) return;
+                ev.Cancel = true;
+                _window.Hide();
+            };
+        }
         _window.Show();
         _window.Activate();
         _ = _window.NavigateWhenReadyAsync();
@@ -77,9 +89,17 @@ public partial class App : Application
         Shutdown();
     }
 
+    /// <summary>注销/关机:同步停止 dsh 进程,避免系统结束后残留。</summary>
+    protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+    {
+        Log.Info("系统会话结束,停止 dsh 服务");
+        _manager?.Dispose();
+        base.OnSessionEnding(e);
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
-        // 停止自己拉起的 dsh 进程(外部托管进程不碰)
+        // 停止自己拉起的 dsh 进程(外部托管进程不碰);SessionEnding 已停过,此处幂等
         try { _tray?.Dispose(); } catch { }
         try { _manager?.Dispose(); } catch { }
         try { _single?.Dispose(); } catch { }

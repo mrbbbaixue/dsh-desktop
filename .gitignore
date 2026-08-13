@@ -1,7 +1,9 @@
 # ---- .NET ----
 bin/
 obj/
+# 发布产物统一输出到 dist/;其他 dist 变体目录一并忽略
 dist/
+dist-*/
 *.user
 
 # ---- Rider / VS ----

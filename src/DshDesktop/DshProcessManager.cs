@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 
 namespace DshDesktop;
 
@@ -24,6 +25,7 @@ public sealed class DshProcessManager : IDisposable
     private readonly bool _externalManaged;
     private readonly object _gate = new();
     private Process? _process;
+    private IntPtr _job;
     private DateTime _lastUnexpectedExit = DateTime.MinValue;
     private int _consecutiveFailures;
     private bool _disposed;
@@ -109,6 +111,7 @@ public sealed class DshProcessManager : IDisposable
             if (p is null)
                 throw new InvalidOperationException("Process.Start 返回 null");
 
+            AssignToJob(p); // 壳退出(含强杀)时由系统连带终止 dsh,防残留
             lock (_gate) _process = p;
             p.EnableRaisingEvents = true;
             p.OutputDataReceived += (_, e) => { if (e.Data is not null) Log.Info($"[dsh] {e.Data}"); };
@@ -284,5 +287,71 @@ public sealed class DshProcessManager : IDisposable
             _disposed = true;
         }
         KillOwnProcess();
+        CloseJob();
     }
+
+    // ---- Job Object:壳进程退出(含任务管理器强杀)时,系统自动终止 job 内的 dsh 进程 ----
+
+    private const int JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
+    private const int JobObjectBasicLimitInformation = 9;
+
+    /// <summary>把 dsh 进程放入"关闭即杀"的 Job Object;失败时降级(仍可用 Kill(entireProcessTree))。</summary>
+    private void AssignToJob(Process p)
+    {
+        try
+        {
+            if (_job == IntPtr.Zero)
+            {
+                _job = CreateJobObject(IntPtr.Zero, null);
+                if (_job == IntPtr.Zero) return;
+                var info = new JOBOBJECT_BASIC_LIMIT_INFORMATION
+                {
+                    LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+                };
+                SetInformationJobObject(_job, JobObjectBasicLimitInformation, ref info,
+                    (uint)Marshal.SizeOf<JOBOBJECT_BASIC_LIMIT_INFORMATION>());
+            }
+            // 进程刚启动可能有竞态,重试几次
+            for (var i = 0; i < 5 && !AssignProcessToJobObject(_job, p.Handle); i++)
+                Thread.Sleep(50);
+        }
+        catch
+        {
+            // 分配失败降级:正常路径的 Kill(true) 与 Process.Exited 仍然生效
+        }
+    }
+
+    private void CloseJob()
+    {
+        if (_job == IntPtr.Zero) return;
+        try { CloseHandle(_job); } catch { }
+        _job = IntPtr.Zero;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JOBOBJECT_BASIC_LIMIT_INFORMATION
+    {
+        public long PerProcessUserTimeLimit;
+        public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public IntPtr MinimumWorkingSetSize;
+        public IntPtr MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public IntPtr Affinity;
+        public uint PriorityClass;
+        public uint SchedulingClass;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string? lpName);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool SetInformationJobObject(IntPtr hJob, int jobObjectInfoClass,
+        ref JOBOBJECT_BASIC_LIMIT_INFORMATION lpJobObjectInfo, uint cbJobObjectInfoLength);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool CloseHandle(IntPtr hObject);
 }
