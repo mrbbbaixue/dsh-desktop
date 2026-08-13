@@ -19,7 +19,7 @@ jobs:
         run: dotnet test -c Release
 
       - name: Publish single-file
-        run: dotnet publish src/DshDesktop -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o dist
+        run: dotnet publish src/DshDesktop -c Release -r win-x64 -o dist
 
       - name: Upload artifact
         uses: actions/upload-artifact@v5

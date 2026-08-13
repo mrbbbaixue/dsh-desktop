@@ -34,10 +34,13 @@ DshDesktop.exe
 git clone https://github.com/mrbbbaixue/dsh-desktop.git
 cd dsh-desktop
 dotnet test                        # 单元测试(ShellLogic 策略)
-dotnet publish src/DshDesktop -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o dist
+./scripts/publish.ps1              # 打包:zip + SHA256(框架依赖单文件,约 2.3MB)
+./scripts/publish.ps1 -SelfContained   # 自包含单文件(内置 .NET 运行时,约 175MB,免装运行时)
 ```
 
-产物:`dist\DshDesktop.exe`(框架依赖单文件,约 1MB)。
+单文件发布配置已固化在 `DshDesktop.csproj`(WebView2Loader.dll 与托管依赖一并嵌入,发布目录只有一个 exe)。产物在 `dist\`:
+- `dsh-desktop-<版本>-win-x64-framework-dependent.zip` — 默认,需 .NET Desktop Runtime 10
+- `dsh-desktop-<版本>-win-x64-self-contained.zip` — 免装运行时,仅需 WebView2 Runtime(Windows 10/11 自带)
 
 ## 常见问题
 

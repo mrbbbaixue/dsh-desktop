@@ -14,8 +14,20 @@
     <ApplicationIcon>favicon.ico</ApplicationIcon>
     <!-- WPF 运行时默认 PerMonitorV2(WPF 自动启用);此处同步 WinForms 部分(托盘)的 DPI 模式 -->
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <!--
+      单文件发布配置(固化,无需命令行传参):
+      - PublishSingleFile: 单文件输出
+      - IncludeNativeLibrariesForSelfExtract: WebView2Loader.dll 等原生库嵌入 exe,运行时自解压
+      - IncludeAllContentForSelfExtract: runtimes/ 下的托管依赖也嵌入 exe
+      - DebugType embedded: 符号嵌入,不散落 pdb
+      (EnableCompressionInSingleFile 仅自包含模式可用,故不在此设置)
+    -->
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>false</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <DebugType>embedded</DebugType>
+    <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
 
   <ItemGroup>
