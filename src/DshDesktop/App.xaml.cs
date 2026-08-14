@@ -43,6 +43,9 @@ public partial class App : Application
 
         Log.Init();
         Log.Info($"DshDesktop 启动: url={_url} args={string.Join(' ', e.Args)}");
+        // 启动即探测 Node.js / npm / dsh,一行写清"已安装还是未安装",
+        // 后台自启(--minimized)无窗口时也便于从日志定位"dsh web 起不来"的原因。
+        Log.Info($"环境检测: {ShellLogic.FormatRuntimeSummary(ShellLogic.ProbeRuntime())}");
 
         _manager!.StateChanged += state =>
         {

@@ -151,4 +151,53 @@ public class ShellLogicTests
         Assert.Equal("https://registry.npmmirror.com",
             ShellLogic.ResolveNpmRegistry("  https://registry.npmmirror.com  "));
     }
+
+    // ---- FormatRuntimeSummary ----
+
+    [Fact]
+    public void FormatRuntimeSummary_AllInstalled_ListsVersions()
+    {
+        var probe = new ShellLogic.RuntimeProbe(true, "v22.14.0", true, true);
+        Assert.Equal("Node.js 已安装 (v22.14.0) · npm 已安装 · dsh 已安装",
+            ShellLogic.FormatRuntimeSummary(probe));
+    }
+
+    [Fact]
+    public void FormatRuntimeSummary_DshMissing_NotesNpxFallback()
+    {
+        var probe = new ShellLogic.RuntimeProbe(true, "v20.11.1", true, false);
+        Assert.Equal("Node.js 已安装 (v20.11.1) · npm 已安装 · dsh 未安装(将自动用 npx 启动)",
+            ShellLogic.FormatRuntimeSummary(probe));
+    }
+
+    [Fact]
+    public void FormatRuntimeSummary_NodeMissing_AppendsActionableHint()
+    {
+        var probe = new ShellLogic.RuntimeProbe(false, null, false, false);
+        Assert.Equal("Node.js 未安装 · npm 未安装 · dsh 未安装(将自动用 npx 启动) —— 无法启动 dsh 服务,请先安装 Node.js",
+            ShellLogic.FormatRuntimeSummary(probe));
+    }
+
+    // ---- IsDshCommandLine ----
+
+    [Theory]
+    [InlineData("node \"C:\\Users\\x\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai\\dsh\\bin\\cli.js\" web --host 127.0.0.1 --port 3080")]
+    [InlineData("node C:\\Users\\x\\AppData\\Local\\npm-cache\\_npx\\abc\\node_modules\\@deepseek-ai\\dsh\\bin\\cli.js web --host 127.0.0.1 --port 3080")]
+    [InlineData("node ...dsh... web --HOST 127.0.0.1 --PORT 3080")]
+    public void IsDshCommandLine_MatchesDshWebProcess(string commandLine)
+    {
+        Assert.True(ShellLogic.IsDshCommandLine(commandLine, 3080));
+    }
+
+    [Theory]
+    [InlineData("node server.js --port 3080")]                          // 其它 node 服务占用同端口
+    [InlineData("C:\\tools\\myapp.exe --port 3080")]                    // 非 node 进程
+    [InlineData("node ...dsh... web --host 127.0.0.1 --port 3090")]     // dsh 但端口不同
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void IsDshCommandLine_DoesNotMatchOthers(string? commandLine)
+    {
+        Assert.False(ShellLogic.IsDshCommandLine(commandLine, 3080));
+    }
 }

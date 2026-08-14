@@ -13,6 +13,7 @@
 - 🎨 **原生标题栏深浅色** — 自动跟随 Windows 深浅色主题,无需手动切换
 - 🚀 **开机自启** — 托盘菜单一键开启(仅当前用户,`--minimized` 静默启动不弹窗)
 - 🔌 **自动拉起** — 服务没开时自动启动并等待就绪;就绪后窗口自动加载
+- 🔎 **环境检测** — 启动时在窗口与日志中显示一行"已安装/未安装":Node.js、npm、dsh;Node.js 缺失时直接提示安装,不再只报笼统的"未能就绪"
 - 📋 **日志** — `%USERPROFILE%\.dsh-desktop.log`
 
 ## 安装 / 运行
@@ -51,10 +52,10 @@ dotnet test                        # 单元测试(ShellLogic 策略)
 执行 `winget install Microsoft.DotNet.DesktopRuntime.10` 后重试。
 
 **Q:窗口一直显示"正在启动 dsh 服务…"?**
-服务 90 秒内未就绪(常见于 npx 首次下载慢)。设置 `DSH_NPM_REGISTRY` 镜像后,托盘菜单「重启 dsh 服务」。
+等待页下方有一行环境检测(如 `Node.js 已安装 (v22.14.0) · npm 已安装 · dsh 未安装(将自动用 npx 启动)`)。若显示 `Node.js 未安装`,请先安装 Node.js 后从托盘菜单重试。服务 90 秒内未就绪(常见于 npx 首次下载慢)时,壳会在后台继续等待,下载完成会自动加载页面;也可设置 `DSH_NPM_REGISTRY` 镜像后,托盘菜单「重启 dsh 服务」。
 
 **Q:网页里"选择目录"报 `directory picker failed: spawn C:\Program Files\nodejs\node.exe ENOENT`?**
-通常是残留的旧 dsh 进程占着 3080 端口(例如升级 Node.js 前的 32 位旧服务,spawn 位数不匹配的新 node.exe 会报 ENOENT)。托盘菜单「重启 dsh 服务」即可:壳会结束占用端口的残留进程并重新拉起。确认 Node.js 已安装后重试。
+通常是残留的旧 dsh 进程占着 3080 端口(例如升级 Node.js 前的 32 位旧服务,spawn 位数不匹配的新 node.exe 会报 ENOENT)。托盘菜单「重启 dsh 服务」即可:壳会结束占用端口的残留 dsh 进程并重新拉起(仅清理命令行确认是 dsh 的进程,其它占用端口的进程会跳过并记入日志,避免误杀)。确认 Node.js 已安装后重试。
 
 ## 环境变量
 

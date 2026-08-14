@@ -131,6 +131,13 @@ public sealed class DshProcessManager : IDisposable
                 _consecutiveFailures++;
                 SetState(ServiceState.Failed);
                 Log.Error("dsh 90 秒内未就绪。若为 npx 首次下载过慢,可设置 DSH_NPM_REGISTRY 指定 npm 镜像;详情见 %USERPROFILE%\\.dsh-desktop.log");
+                // 进程还活着(如 npx 仍在下载/安装):不要就此放弃,
+                // 后台继续等端口就绪,一旦起来自动转 Running,窗口随即自动加载。
+                if (ProcessAlive())
+                {
+                    Log.Info("dsh 进程仍在运行,转入后台等待就绪…");
+                    _ = WaitForReadyInBackgroundAsync();
+                }
             }
         }
         catch (Exception ex)
@@ -167,6 +174,31 @@ public sealed class DshProcessManager : IDisposable
         _ = Task.Run(EnsureRunningAsync);
     }
 
+    /// <summary>90 秒未就绪但进程仍存活时(如 npx 首次下载慢):后台继续等端口,
+    /// 一旦就绪自动转 Running,窗口经 StateChanged 事件随即自动加载,不再卡死在失败态。</summary>
+    private async Task WaitForReadyInBackgroundAsync()
+    {
+        var ok = await WaitReadyAsync(TimeSpan.FromMinutes(10));
+        if (!ok) return;
+        lock (_gate)
+        {
+            if (_disposed || State is ServiceState.Stopping or ServiceState.Stopped) return;
+            _consecutiveFailures = 0;
+        }
+        Log.Info("后台等待就绪成功,dsh 服务已运行");
+        SetState(ServiceState.Running);
+    }
+
+    /// <summary>自己拉起的进程是否还活着(锁内读取,避免与停止/释放竞争)。</summary>
+    private bool ProcessAlive()
+    {
+        lock (_gate)
+        {
+            var p = _process;
+            return p is not null && !p.HasExited;
+        }
+    }
+
     /// <summary>停止自己拉起的 dsh 进程(外部托管进程不碰)。</summary>
     public async Task StopAsync()
     {
@@ -181,10 +213,21 @@ public sealed class DshProcessManager : IDisposable
         // 端口可能被残留的旧 dsh 进程占用(非本壳拉起的,例如升级 Node.js 前的
         // 32 位旧服务仍占着 3080)。这类进程 spawn 新 node.exe 会报 ENOENT(位数不匹配),
         // 一并结束,保证"停止/重启"真正生效。
+        // 但只清理"命令行确认是 dsh 服务"的占用者;特征不符的(如用户其它 node
+        // 服务恰好占用同一端口)一律跳过并提示,避免误杀无关进程。
         if (FindPortPid(Port) is int owner)
         {
-            Log.Info($"端口 {Port} 仍被 PID {owner} 占用,结束该残留进程");
-            KillPidTree(owner);
+            var commandLine = GetProcessCommandLine(owner);
+            if (ShellLogic.IsDshCommandLine(commandLine, Port))
+            {
+                Log.Info($"端口 {Port} 仍被 PID {owner} 占用(残留 dsh 服务),结束该进程");
+                KillPidTree(owner);
+            }
+            else
+            {
+                Log.Info($"端口 {Port} 被 PID {owner} 占用,但命令行不含 dsh 特征,已跳过以免误杀其它进程" +
+                    $"(命令行: {commandLine ?? "无法读取"});如需清理请手动结束该进程");
+            }
         }
         await WaitPortClosedAsync(TimeSpan.FromSeconds(10));
         lock (_gate)
@@ -240,12 +283,23 @@ public sealed class DshProcessManager : IDisposable
         try { p.Dispose(); } catch { }
     }
 
-    /// <summary>启动命令解析:优先 PATH 中的 dsh;否则 npx 回退(可注入 npm 镜像源)。</summary>
+    /// <summary>启动命令解析:优先 PATH 中的 dsh;否则 npx 回退(可注入 npm 镜像源)。
+    /// Node.js 与 dsh 都不可用 → 立即抛错,避免静默失败后干等 90 秒。</summary>
     private (string Command, string Arguments, IReadOnlyDictionary<string, string> Environment) BuildLaunchPlan()
     {
         var args = $"web --host 127.0.0.1 --port {Port}";
-        if (CommandExistsOnPath("dsh"))
+        var probe = ShellLogic.ProbeRuntime();
+
+        if (probe.DshFound)
+        {
+            if (!probe.NodeFound)
+                Log.Error("PATH 中存在 dsh,但未检测到 Node.js —— dsh 可能无法运行,请确认 Node.js 已安装");
             return ("dsh", args, new Dictionary<string, string>());
+        }
+
+        if (!probe.NodeFound)
+            throw new InvalidOperationException(
+                "未检测到 Node.js(PATH 中也没有 dsh),无法在后台启动 dsh 服务;请先安装 Node.js 后重试");
 
         var env = new Dictionary<string, string>();
         var registry = ShellLogic.ResolveNpmRegistry(Environment.GetEnvironmentVariable("DSH_NPM_REGISTRY"));
@@ -255,28 +309,6 @@ public sealed class DshProcessManager : IDisposable
             Log.Info($"npx 回退使用 npm 镜像: {registry}");
         }
         return ("npx -y @deepseek-ai/dsh", args, env);
-    }
-
-    private static bool CommandExistsOnPath(string command)
-    {
-        try
-        {
-            using var p = Process.Start(new ProcessStartInfo("where.exe", command)
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            });
-            if (p is null) return false;
-            var output = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(3000);
-            return p.ExitCode == 0 && !string.IsNullOrWhiteSpace(output);
-        }
-        catch
-        {
-            return false;
-        }
     }
 
     private void SetState(ServiceState state)
@@ -347,6 +379,33 @@ public sealed class DshProcessManager : IDisposable
             p?.WaitForExit(5000);
         }
         catch { /* 进程已退出等情况忽略 */ }
+    }
+
+    /// <summary>
+    /// 读取进程命令行(PowerShell + CIM,零新依赖)。仅用于停止时识别占用端口的
+    /// 进程是否为 dsh,避免误杀其它 node 进程;读取失败返回 null(调用方保守处理)。
+    /// </summary>
+    private static string? GetProcessCommandLine(int pid)
+    {
+        try
+        {
+            using var p = Process.Start(new ProcessStartInfo("powershell.exe",
+                $"-NoProfile -NonInteractive -Command \"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine\"")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+            if (p is null) return null;
+            var output = p.StandardOutput.ReadToEnd();
+            p.WaitForExit(8000);
+            return string.IsNullOrWhiteSpace(output) ? null : output.Trim();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     // ---- Job Object:壳进程退出(含任务管理器强杀)时,系统自动终止 job 内的 dsh 进程 ----

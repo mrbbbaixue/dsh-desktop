@@ -1,4 +1,4 @@
-﻿param(
+param(
     # 全自包含发布:内置 .NET 运行时,单个 exe 无需安装 .NET Desktop Runtime(体积 ~100MB+)
     [switch]$SelfContained,
     [string]$Runtime = "win-x64",
@@ -10,9 +10,11 @@ $root = Split-Path -Parent $PSScriptRoot
 
 # 版本:优先取最近 git tag(vX.Y.Z),否则 0.1.0
 # (PS 5.1 在 EAP=Stop 下会把原生命令 stderr 抛为错误,此处临时降级)
+# 注意:不能接 Select-Object 管道——它会提前关闭 git 的 stdout 导致 $LASTEXITCODE
+# 变 $null(而 $null -ne 0 为真),误回退 0.1.0。
 $prevEap = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-$version = & git -C $root describe --tags --abbrev=0 2>$null | Select-Object -First 1
+$version = & git -C $root describe --tags --abbrev=0 2>$null
 $ErrorActionPreference = $prevEap
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($version)) { $version = "0.1.0" }
 $version = $version.TrimStart('v')

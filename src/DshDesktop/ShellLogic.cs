@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -151,4 +152,99 @@ public static class ShellLogic
     /// </summary>
     internal static string? ResolveNpmRegistry(string? envValue) =>
         string.IsNullOrWhiteSpace(envValue) ? null : envValue.Trim();
+
+    // ---- 运行环境探测:Node.js / npm / dsh 是否可用(启动时给用户一行明确提示) ----
+
+    /// <summary>本机工具链探测结果(dsh 服务运行所需)。</summary>
+    internal sealed record RuntimeProbe(
+        bool NodeFound, string? NodeVersion, bool NpmFound, bool DshFound);
+
+    /// <summary>
+    /// 探测本机工具链:node --version 与 PATH 中的 npm/npx/dsh。
+    /// 探测失败一律视为未安装(不抛异常,日志与提示优先保证可用)。
+    /// </summary>
+    internal static RuntimeProbe ProbeRuntime()
+    {
+        var nodeVersion = RunForOutput("node", "--version");
+        var nodeFound = !string.IsNullOrWhiteSpace(nodeVersion);
+        return new RuntimeProbe(
+            nodeFound,
+            nodeFound ? nodeVersion!.Trim() : null,
+            CommandExists("npm") && CommandExists("npx"),
+            CommandExists("dsh"));
+    }
+
+    /// <summary>
+    /// 把探测结果格式化为一行启动提示(已安装 / 未安装)。
+    /// Node.js 缺失时附一句后果说明,方便一眼定位"后台起不来"的原因。
+    /// </summary>
+    internal static string FormatRuntimeSummary(RuntimeProbe probe)
+    {
+        var parts = new List<string>
+        {
+            probe.NodeFound ? $"Node.js 已安装 ({probe.NodeVersion})" : "Node.js 未安装",
+            probe.NpmFound ? "npm 已安装" : "npm 未安装",
+            probe.DshFound ? "dsh 已安装" : "dsh 未安装(将自动用 npx 启动)",
+        };
+        var summary = string.Join(" · ", parts);
+        return probe.NodeFound ? summary : summary + " —— 无法启动 dsh 服务,请先安装 Node.js";
+    }
+
+    /// <summary>
+    /// 判断进程命令行是否属于 dsh web 服务(供停止/重启时识别"残留 dsh"用)。
+    /// 只有命令行同时含 dsh 与目标端口参数才视为 dsh 服务,避免误杀用户其它
+    /// 恰好占用同一端口的 node 进程。
+    /// </summary>
+    internal static bool IsDshCommandLine(string? commandLine, int port)
+    {
+        if (string.IsNullOrWhiteSpace(commandLine)) return false;
+        return commandLine.Contains("dsh", StringComparison.OrdinalIgnoreCase)
+            && commandLine.Contains($"--port {port}", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>where.exe 探测命令是否在 PATH 中(找不到/超时/异常均视为未安装)。</summary>
+    private static bool CommandExists(string command)
+    {
+        try
+        {
+            using var p = Process.Start(new ProcessStartInfo("where.exe", command)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+            if (p is null) return false;
+            var output = p.StandardOutput.ReadToEnd();
+            p.WaitForExit(3000);
+            return p.ExitCode == 0 && !string.IsNullOrWhiteSpace(output);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>运行命令并捕获 stdout;退出码非 0 / 找不到命令 / 异常 → null。</summary>
+    private static string? RunForOutput(string command, string arguments)
+    {
+        try
+        {
+            using var p = Process.Start(new ProcessStartInfo(command, arguments)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+            if (p is null) return null;
+            var output = p.StandardOutput.ReadToEnd();
+            p.WaitForExit(5000);
+            return p.ExitCode == 0 ? output : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }
