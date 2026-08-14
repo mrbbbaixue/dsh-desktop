@@ -6,7 +6,8 @@ using Microsoft.Win32;
 namespace DshDesktop;
 
 /// <summary>
-/// 系统原生标题栏深浅色(仅跟随系统主题,无手动开关)。
+/// 窗口 DWM 元素(无边框模式下即右上角的最小化/最大化/关闭按钮)深浅色,
+/// 仅跟随系统主题,无手动开关。
 /// 通过 DwmSetWindowAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE) 切换,
 /// 系统主题切换由 MainWindow 的 WM_SETTINGCHANGE(ImmersiveColorSet) 监听驱动。
 /// </summary>

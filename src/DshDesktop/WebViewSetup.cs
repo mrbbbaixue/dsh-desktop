@@ -21,6 +21,11 @@ internal static class WebViewSetup
         settings.IsGeneralAutofillEnabled = false;       // 关闭表单自动填充,减少后台开销
         settings.IsPasswordAutosaveEnabled = false;      // 不保存密码
 
+        // 无边框窗口(WebView2 盖住标题栏)支持:允许网页用 CSS app-region: drag / no-drag
+        // 标记标题栏拖拽区(拖拽整窗、右键系统菜单、双击最大化)。
+        // 该设置在下一次导航后生效;网页端布局仍需为右上角窗口按钮预留空间。
+        settings.IsNonClientRegionSupportEnabled = true;
+
         // 权限:自动放行插件/DSH 依赖的能力(见 ShellLogic.IsAutoGrantedPermission),
         // 其余保持默认拒绝。麦克风/摄像头默认拒绝(隐私)。
         core.PermissionRequested += (_, e) =>

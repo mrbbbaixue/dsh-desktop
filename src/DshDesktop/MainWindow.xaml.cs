@@ -9,7 +9,8 @@ using Microsoft.Web.WebView2.Wpf;
 namespace DshDesktop;
 
 /// <summary>
-/// 主窗口:WebView2 填充 + 系统原生标题栏(深浅色跟随系统)。
+/// 主窗口:无边框(WindowChrome + DWM 玻璃扩展),WebView2 盖满整窗,
+/// 包括原系统标题栏区域;右上角最小化/最大化/关闭按钮仍由 DWM 绘制并悬浮于 WebView2 之上。
 /// WebView2 首次显示时才初始化(懒加载),避免开机自启 --minimized 时白占内存。
 /// </summary>
 public partial class MainWindow : Window
@@ -35,6 +36,7 @@ public partial class MainWindow : Window
         SourceInitialized += (_, _) =>
         {
             ThemeManager.Apply(this);
+            WindowFrame.ApplySquareCorners(this);
             HookSystemThemeChange();
         };
     }
@@ -68,6 +70,8 @@ public partial class MainWindow : Window
     /// <summary>
     /// 初始化 WebView2(首次)并等待 dsh 服务就绪后导航。
     /// 幂等:重启服务后再次调用即重新加载页面。
+    /// 遮罩上同时显示一行环境检测(Node.js / npm / dsh 已安装还是未安装),
+    /// 未检测到 Node.js 时给出明确指引,不再只显示笼统的"未能就绪"。
     /// </summary>
     public async Task NavigateWhenReadyAsync()
     {
@@ -77,6 +81,9 @@ public partial class MainWindow : Window
         StatusOverlay.Visibility = Visibility.Visible;
         StatusProgress.IsIndeterminate = true;
         StatusText.Text = "正在启动 dsh 服务…";
+        var probe = ShellLogic.ProbeRuntime();
+        Log.Info($"环境检测: {ShellLogic.FormatRuntimeSummary(probe)}");
+        EnvStatusText.Text = ShellLogic.FormatRuntimeSummary(probe);
 
         var ready = await _manager.WaitReadyAsync(TimeSpan.FromSeconds(95));
         if (ready && WebView.CoreWebView2 is not null)
@@ -87,7 +94,12 @@ public partial class MainWindow : Window
         else
         {
             StatusProgress.IsIndeterminate = false;
-            StatusText.Text = "dsh 服务未能就绪,请查看日志 %USERPROFILE%\\.dsh-desktop.log,或从托盘菜单重试。";
+            // 再探测一次(用户可能在等待期间装好了 Node),失败提示按原因区分
+            probe = ShellLogic.ProbeRuntime();
+            EnvStatusText.Text = ShellLogic.FormatRuntimeSummary(probe);
+            StatusText.Text = probe.NodeFound
+                ? "dsh 服务未能就绪,请查看日志 %USERPROFILE%\\.dsh-desktop.log,或从托盘菜单重试。"
+                : "未检测到 Node.js,无法在后台启动 dsh 服务。请安装 Node.js 后,从托盘菜单「启动 dsh 服务」重试。";
         }
     }
 
