@@ -152,6 +152,18 @@ public class ShellLogicTests
             ShellLogic.ResolveNpmRegistry("  https://registry.npmmirror.com  "));
     }
 
+    // ---- BuildDshWebArgs ----
+
+    [Fact]
+    public void BuildDshWebArgs_UsesResolvedPort()
+    {
+        var args = ShellLogic.BuildDshWebArgs(9000);
+        Assert.Equal("web", args[0]);
+        Assert.Equal("127.0.0.1", args[2]);
+        Assert.Equal("--port", args[3]);
+        Assert.Equal("9000", args[4]);
+    }
+
     // ---- FormatRuntimeSummary ----
 
     [Fact]

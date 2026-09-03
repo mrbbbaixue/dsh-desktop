@@ -191,6 +191,14 @@ public static class ShellLogic
     }
 
     /// <summary>
+    /// dsh web 服务的命令行参数(不含可执行文件):固定监听回环地址与解析端口。
+    /// 启动 dsh 与窗口导航必须使用同一端口(ShellLogic.ResolveTarget 的产物),
+    /// 此处集中生成,避免任何一处写死默认端口造成"服务起来了但页面访问不到"的错位。
+    /// </summary>
+    internal static string[] BuildDshWebArgs(int port) =>
+        new[] { "web", "--host", "127.0.0.1", "--port", port.ToString() };
+
+    /// <summary>
     /// 判断进程命令行是否属于 dsh web 服务(供停止/重启时识别"残留 dsh"用)。
     /// 只有命令行同时含 dsh 与目标端口参数才视为 dsh 服务,避免误杀用户其它
     /// 恰好占用同一端口的 node 进程。

@@ -9,8 +9,7 @@ using Microsoft.Web.WebView2.Wpf;
 namespace DshDesktop;
 
 /// <summary>
-/// 主窗口:无边框(WindowChrome + DWM 玻璃扩展),WebView2 盖满整窗,
-/// 包括原系统标题栏区域;右上角最小化/最大化/关闭按钮仍由 DWM 绘制并悬浮于 WebView2 之上。
+/// 主窗口:WebView2 填充 + 系统原生标题栏(深浅色跟随系统)。
 /// WebView2 首次显示时才初始化(懒加载),避免开机自启 --minimized 时白占内存。
 /// </summary>
 public partial class MainWindow : Window
@@ -36,7 +35,6 @@ public partial class MainWindow : Window
         SourceInitialized += (_, _) =>
         {
             ThemeManager.Apply(this);
-            WindowFrame.ApplySquareCorners(this);
             HookSystemThemeChange();
         };
     }

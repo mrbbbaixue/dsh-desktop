@@ -3,12 +3,13 @@
 [![build](https://github.com/mrbbbaixue/dsh-desktop/actions/workflows/build.yml/badge.svg)](https://github.com/mrbbbaixue/dsh-desktop/actions/workflows/build.yml)
 [![license](https://img.shields.io/github/license/mrbbbaixue/dsh-desktop)](LICENSE)
 
-> DeepSeek Harness 的 Windows 桌面启动器:.NET 10 WPF + WebView2,独立进程托管 dsh 服务,托盘管理,标题栏深浅色跟随系统。
+> DeepSeek Harness 的 Windows 桌面启动器:.NET 10 WPF + WebView2,独立进程托管 dsh 服务,托盘管理,原生标题栏深浅色跟随系统。
 
 ## 特性
 
 - 🪟 **WPF + WebView2,HiDPI** — PerMonitorV2 感知,多显示器不同缩放比例下自动适配;窗口约 50–150MB,关窗即释放
-- ⚙️ **独立进程托管 dsh** — dsh 服务由壳用独立进程拉起,不依赖 vbs 等脚本;意外退出自动重启(节流防循环)
+- 🔌 **本地直连,绕过系统代理** — WebView2 访问 127.0.0.1 / DSH 地址默认直连,不被公司代理、Clash 等系统代理拦截
+- ⚙️ **独立进程托管 dsh** — dsh 服务由壳用独立进程拉起(经 cmd 执行的子进程),不依赖 vbs 等脚本;启动参数显式使用解析端口,与页面访问地址同源;意外退出自动重启(节流防循环)
 - 🖥️ **系统托盘** — 右键托盘菜单可随时 **启动 / 重启 / 停止** dsh 服务;关窗隐藏到托盘,服务常驻
 - 🎨 **原生标题栏深浅色** — 自动跟随 Windows 深浅色主题,无需手动切换
 - 🚀 **开机自启** — 托盘菜单一键开启(仅当前用户,`--minimized` 静默启动不弹窗)

@@ -6,25 +6,7 @@
         Width="1280" Height="840"
         MinWidth="800" MinHeight="600"
         WindowStartupLocation="CenterScreen"
-        WindowStyle="None"
         Loaded="Window_Loaded">
-    <!--
-      无边框 + DWM 玻璃扩展(WindowChrome):
-      - GlassFrameThickness=-1 把 DWM 帧扩展到整个窗口,客户端区(WebView2)盖满整窗,
-        包括原来的系统标题栏区域;
-      - 右上角的最小化/最大化/关闭按钮仍由 DWM 绘制并悬浮在 WebView2 之上,
-        保持原生外观、Win11 贴靠布局、深浅色跟随(ThemeManager);
-      - CaptionHeight=8 提供顶部 8px 原生拖拽区(网页头部内容从约 12px 起,
-        不会被抢交互);网页端可另用 app-region: drag 定义更大拖拽区
-        (需 WebViewSetup 中已开启 IsNonClientRegionSupportEnabled);
-      - ResizeBorderThickness 维持四边可拖拽缩放。
-    -->
-    <WindowChrome.WindowChrome>
-        <WindowChrome CaptionHeight="8"
-                      ResizeBorderThickness="6"
-                      GlassFrameThickness="-1"
-                      UseAeroCaptionButtons="True" />
-    </WindowChrome.WindowChrome>
     <Grid>
         <wv2:WebView2 x:Name="WebView" />
         <!-- 服务未就绪时的等待/失败遮罩 -->

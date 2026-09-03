@@ -22,6 +22,9 @@ public sealed class DshProcessManager : IDisposable
         Failed,
     }
 
+    /// <summary>启动命令:可执行文件 + 参数列表(经 cmd.exe 执行)+ 需要注入的环境变量。</summary>
+    internal sealed record LaunchPlan(string Command, string[] Args, IReadOnlyDictionary<string, string> Environment);
+
     private readonly bool _externalManaged;
     private readonly object _gate = new();
     private Process? _process;
@@ -29,6 +32,7 @@ public sealed class DshProcessManager : IDisposable
     private DateTime _lastUnexpectedExit = DateTime.MinValue;
     private int _consecutiveFailures;
     private bool _disposed;
+    private Func<int, LaunchPlan>? _buildLaunchPlan;
 
     public string Url { get; }
     public int Port { get; }
@@ -42,6 +46,15 @@ public sealed class DshProcessManager : IDisposable
         Url = url;
         Port = port;
         _externalManaged = externalManaged;
+        _buildLaunchPlan = port => BuildLaunchPlanCore(port);
+    }
+
+    /// <summary>测试专用:注入启动命令构造器,便于断言端口/参数传递(默认用 BuildLaunchPlanCore)。</summary>
+    internal DshProcessManager(
+        string url, int port, bool externalManaged, Func<int, LaunchPlan> buildLaunchPlan)
+        : this(url, port, externalManaged)
+    {
+        _buildLaunchPlan = buildLaunchPlan;
     }
 
     /// <summary>探测 127.0.0.1 端口是否已有服务在监听。</summary>
@@ -91,21 +104,24 @@ public sealed class DshProcessManager : IDisposable
             }
 
             KillOwnProcess(); // 清理可能残留的旧进程
-            var plan = BuildLaunchPlan();
-            Log.Info($"拉起 dsh: {plan.Command} {plan.Arguments}");
-
+            var plan = _buildLaunchPlan!(Port);
             var psi = new ProcessStartInfo
             {
                 FileName = "cmd.exe",
-                Arguments = $"/c \"{plan.Command} {plan.Arguments}\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
+            // 用 ArgumentList 传参,由系统完成正确的引号/转义,端口与路径含空格也安全
+            psi.ArgumentList.Add("/c");
+            psi.ArgumentList.Add(plan.Command);
+            foreach (var arg in plan.Args)
+                psi.ArgumentList.Add(arg);
             foreach (var (k, v) in plan.Environment)
                 psi.Environment[k] = v;
+            Log.Info($"拉起 dsh: {plan.Command} {string.Join(' ', plan.Args)}");
 
             var p = Process.Start(psi);
             if (p is null)
@@ -283,24 +299,29 @@ public sealed class DshProcessManager : IDisposable
         try { p.Dispose(); } catch { }
     }
 
-    /// <summary>启动命令解析:优先 PATH 中的 dsh;否则 npx 回退(可注入 npm 镜像源)。
-    /// Node.js 与 dsh 都不可用 → 立即抛错,避免静默失败后干等 90 秒。</summary>
-    private (string Command, string Arguments, IReadOnlyDictionary<string, string> Environment) BuildLaunchPlan()
+    /// <summary>
+    /// 启动命令解析:优先 PATH 中的 dsh;否则 npx 回退(可注入 npm 镜像源)。
+    /// 端口显式取自调用方解析的 Port(与导航地址同源),不会出现"服务起了但窗口访问的
+    /// 是另一个端口"的错位。Node.js 与 dsh 都不可用 → 立即抛错,避免静默失败后干等 90 秒。
+    /// </summary>
+    private LaunchPlan BuildLaunchPlanCore(int port)
     {
-        var args = $"web --host 127.0.0.1 --port {Port}";
+        // 参数与窗口导航地址同源(ShellLogic.BuildDshWebArgs),端口不会错位
+        var args = ShellLogic.BuildDshWebArgs(port);
         var probe = ShellLogic.ProbeRuntime();
 
         if (probe.DshFound)
         {
             if (!probe.NodeFound)
                 Log.Error("PATH 中存在 dsh,但未检测到 Node.js —— dsh 可能无法运行,请确认 Node.js 已安装");
-            return ("dsh", args, new Dictionary<string, string>());
+            return new LaunchPlan("dsh", args, new Dictionary<string, string>());
         }
 
         if (!probe.NodeFound)
             throw new InvalidOperationException(
                 "未检测到 Node.js(PATH 中也没有 dsh),无法在后台启动 dsh 服务;请先安装 Node.js 后重试");
 
+        // npx 回退:registry 通过环境变量注入(npx 只读 npm_config_registry,不能当命令参数追加)
         var env = new Dictionary<string, string>();
         var registry = ShellLogic.ResolveNpmRegistry(Environment.GetEnvironmentVariable("DSH_NPM_REGISTRY"));
         if (registry is not null)
@@ -308,7 +329,10 @@ public sealed class DshProcessManager : IDisposable
             env["npm_config_registry"] = registry;
             Log.Info($"npx 回退使用 npm 镜像: {registry}");
         }
-        return ("npx -y @deepseek-ai/dsh", args, env);
+
+        // cmd.exe 会直接执行第一个词,npx 是 PATH 里的可执行文件,后续参数原样传递
+        var npxArgs = new[] { "-y", "@deepseek-ai/dsh" }.Concat(args).ToArray();
+        return new LaunchPlan("npx", npxArgs, env);
     }
 
     private void SetState(ServiceState state)
