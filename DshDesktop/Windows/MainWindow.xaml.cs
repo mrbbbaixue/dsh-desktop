@@ -3,6 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using System.Windows.Media;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -22,6 +23,7 @@ public partial class MainWindow : Window
     private readonly string _userDataFolder;
     private readonly DshProcessManager _manager;
     private readonly WindowPrefs _prefs;
+    private ImageSource? _colorIcon;
     private bool _webReady;
     private bool _navigateInFlight;
     private string? _navigatedUrl;
@@ -95,6 +97,23 @@ public partial class MainWindow : Window
             }
         }
         return IntPtr.Zero;
+    }
+
+    /// <summary>把任务栏大图标换为单色剪影(与托盘图标同主题一致)。原彩色图标保留,Dispose 时还原。</summary>
+    public void ApplyTaskbarIcon(bool lightTaskbar)
+    {
+        _colorIcon ??= Icon;
+        Icon = AppIcons.LoadMonoIconSource(lightTaskbar) ?? Icon;
+    }
+
+    /// <summary>还原彩色主图标(退出清空托盘时调用)。</summary>
+    public void RestoreColorTaskbarIcon()
+    {
+        if (_colorIcon is not null)
+        {
+            Icon = _colorIcon;
+            _colorIcon = null;
+        }
     }
 
     /// <summary>关窗:隐藏到托盘,不销毁,WebView 继续渲染。</summary>
@@ -184,7 +203,7 @@ public partial class MainWindow : Window
             }
             else
             {
-                StatusText.Text = "dsh 服务未能就绪,请查看日志 %USERPROFILE%\\.dsh-desktop.log,或从托盘菜单重试。";
+                StatusText.Text = "dsh 服务未能就绪,请查看日志 %USERPROFILE%\\.dsh\\desktop.log,或从托盘菜单重试。";
             }
         }
     }

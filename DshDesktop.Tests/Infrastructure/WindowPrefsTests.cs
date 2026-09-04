@@ -7,7 +7,7 @@ namespace DshDesktop.Tests.Infrastructure;
 
 public class WindowPrefsTests
 {
-    private static string TempPath() => Path.Combine(Path.GetTempPath(), "dsh-windowprefs-" + Guid.NewGuid().ToString("N") + ".ini");
+    private static string TempPath() => Path.Combine(Path.GetTempPath(), "dsh-windowprefs-" + Guid.NewGuid().ToString("N") + ".xml");
 
     [Fact]
     public void TryLoad_MissingFile_KeepsDefaults()
@@ -46,25 +46,16 @@ public class WindowPrefsTests
     }
 
     [Fact]
-    public void TryLoad_RespectsCommentsAndBlankLines()
+    public void Save_WritesXmlRootElement()
     {
         var path = TempPath();
         try
         {
-            File.WriteAllLines(path,
-            [
-                "; 注释行",
-                "# 注释行2",
-                "",
-                "width=900",
-                "height=600",
-                "maximized=false",
-            ]);
-            var prefs = new WindowPrefs(path);
-            Assert.True(prefs.TryLoad());
-            Assert.Equal(900, prefs.Width);
-            Assert.Equal(600, prefs.Height);
-            Assert.False(prefs.Maximized);
+            new WindowPrefs(path).Save();
+            var doc = new System.Xml.XmlDocument();
+            doc.Load(path);
+            Assert.Equal("desktop", doc.DocumentElement!.Name);
+            Assert.NotNull(doc.DocumentElement.SelectSingleNode("width"));
         }
         finally
         {
@@ -73,16 +64,35 @@ public class WindowPrefsTests
     }
 
     [Fact]
-    public void TryLoad_CorruptLines_SkipAndKeepDefaults()
+    public void TryLoad_CorruptXml_KeepsDefaults()
     {
         var path = TempPath();
         try
         {
-            File.WriteAllLines(path, ["width=not-a-number", "garbage", "height=720"]);
+            File.WriteAllText(path, "<desktop><width>这不是数字");
+            var prefs = new WindowPrefs(path);
+            Assert.False(prefs.TryLoad());
+            Assert.Equal(WindowPrefs.DefaultWidth, prefs.Width);
+            Assert.Equal(WindowPrefs.DefaultHeight, prefs.Height);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void TryLoad_MissingElements_UsesDefaults()
+    {
+        var path = TempPath();
+        try
+        {
+            File.WriteAllText(path, "<desktop><width>900</width></desktop>");
             var prefs = new WindowPrefs(path);
             Assert.True(prefs.TryLoad());
-            Assert.Equal(WindowPrefs.DefaultWidth, prefs.Width); // 坏行保留默认
-            Assert.Equal(720, prefs.Height);                     // 好行照常生效
+            Assert.Equal(900, prefs.Width);
+            Assert.Equal(WindowPrefs.DefaultHeight, prefs.Height);
+            Assert.False(prefs.Maximized);
         }
         finally
         {
@@ -94,7 +104,7 @@ public class WindowPrefsTests
     public void Save_CreatesDirectory()
     {
         var dir = Path.Combine(Path.GetTempPath(), "dsh-windowprefs-dir-" + Guid.NewGuid().ToString("N"));
-        var path = Path.Combine(dir, "nested", "desktop.ini");
+        var path = Path.Combine(dir, "nested", "desktop.xml");
         try
         {
             new WindowPrefs(path).Save();

@@ -1,6 +1,8 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using System.Windows.Interop;
+using DshDesktop.Windows;
 using Microsoft.Win32;
 
 namespace DshDesktop.Tray;
@@ -8,12 +10,14 @@ namespace DshDesktop.Tray;
 /// <summary>
 /// 系统托盘:进程控制(启动/重启/停止)、打开窗口、退出。
 /// dsh 服务常驻时关窗隐藏到托盘,进程生命周期由托盘菜单管理。
-/// 图标按任务栏深浅色在黑/白两套之间实时切换(浅色任务栏用黑标,深色用白标)。
+/// 图标按任务栏深浅色实时切换为黑/白剪影(浅色任务栏用黑标,深色用白标);
+/// 同步把主窗口任务栏大图标换为同一套黑白 ICO,保持两处深浅色一致。
 /// </summary>
 internal sealed class TrayIcon : IDisposable
 {
     private readonly NotifyIcon _notify;
     private readonly DshProcessManager _manager;
+    private MainWindow? _window;
     private readonly Icon? _black;
     private readonly Icon? _white;
     private readonly ToolStripMenuItem _miStart;
@@ -22,11 +26,12 @@ internal sealed class TrayIcon : IDisposable
     private bool? _lightTaskbar;
     private bool _disposed;
 
-    public TrayIcon(DshProcessManager manager, Action openWindow, Action exitApp)
+    public TrayIcon(DshProcessManager manager, Action openWindow, Action exitApp, MainWindow? window = null)
     {
         _manager = manager;
-        _black = AppIcons.LoadTrayIcon(lightTaskbar: true);
-        _white = AppIcons.LoadTrayIcon(lightTaskbar: false);
+        _black = AppIcons.LoadMonoIcon(lightTaskbar: true);
+        _white = AppIcons.LoadMonoIcon(lightTaskbar: false);
+        _window = window;
 
         _notify = new NotifyIcon { Text = "DeepSeek Harness" };
         ApplyThemeIcon();
@@ -59,6 +64,15 @@ internal sealed class TrayIcon : IDisposable
 
     public void Show() { }
 
+    /// <summary>主窗口创建后挂接:把任务栏大图标设为当前任务栏主题对应的黑白图标。</summary>
+    public void AttachWindow(MainWindow window)
+    {
+        if (_disposed) return;
+        _window = window;
+        if (_lightTaskbar is bool light)
+            window.ApplyTaskbarIcon(light);
+    }
+
     /// <summary>执行托盘操作并记录异常,避免 async void 静默丢失。</summary>
     private static async Task RunAsync(Task task)
     {
@@ -81,15 +95,17 @@ internal sealed class TrayIcon : IDisposable
         OnUi(ApplyThemeIcon);
     }
 
-    /// <summary>浅色任务栏用黑色图标,深色任务栏用白色图标;主题未变则跳过。</summary>
+    /// <summary>浅色任务栏用黑色图标,深色任务栏用白色图标;主题未变则跳过。同时同步主窗口任务栏大图标。</summary>
     private void ApplyThemeIcon()
     {
         if (_disposed) return;
         var light = ThemeManager.IsTaskbarLight();
         if (_lightTaskbar == light) return;
         _lightTaskbar = light;
-        _notify.Icon = (light ? _black : _white)
+        var icon = (light ? _black : _white)
             ?? _white ?? _black ?? SystemIcons.Application;
+        _notify.Icon = icon;
+        _window?.ApplyTaskbarIcon(light);
     }
 
     /// <summary>根据服务状态刷新托盘提示文本与菜单可用性(状态事件可能来自线程池)。</summary>
@@ -115,6 +131,7 @@ internal sealed class TrayIcon : IDisposable
         _disposed = true;
         SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
         try { _notify.Visible = false; _notify.Dispose(); } catch { }
+        _window?.RestoreColorTaskbarIcon();
         DestroyTrayIcon(_black);
         DestroyTrayIcon(_white);
     }

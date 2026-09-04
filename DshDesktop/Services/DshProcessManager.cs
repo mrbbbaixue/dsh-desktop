@@ -157,7 +157,7 @@ public sealed class DshProcessManager : IDisposable
             else if (ProcessAlive())
             {
                 // 子进程还活着(常见于 npx 首次下载):保持 Starting,后台继续等,窗口的 WaitReady 仍能成功
-                Log.Error("dsh 90 秒内未就绪。若为 npx 首次下载过慢,可设置 DSH_NPM_REGISTRY 指定 npm 镜像;详情见 %USERPROFILE%\\.dsh-desktop.log");
+                Log.Error("dsh 90 秒内未就绪。若为 npx 首次下载过慢,可设置 DSH_NPM_REGISTRY 指定 npm 镜像;详情见 %USERPROFILE%\\.dsh\\desktop.log");
                 Log.Info("dsh 子进程仍在运行,转入后台等待就绪…");
                 _ = WaitForReadyInBackgroundAsync();
             }
@@ -165,7 +165,7 @@ public sealed class DshProcessManager : IDisposable
             {
                 _consecutiveFailures++;
                 SetState(ServiceState.Failed);
-                Log.Error("dsh 90 秒内未就绪且子进程已退出。详情见 %USERPROFILE%\\.dsh-desktop.log");
+                Log.Error("dsh 90 秒内未就绪且子进程已退出。详情见 %USERPROFILE%\\.dsh\\desktop.log");
             }
         }
         catch (Exception ex)

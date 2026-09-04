@@ -60,6 +60,7 @@ public partial class App : Application
         _tray = new TrayIcon(_manager, openWindow: ShowMainWindow, exitApp: RequestExit);
         _tray.Show();
         ShowMainWindow();
+        _tray.AttachWindow(_window!);
 
         // 后台拉起 dsh 服务(未启动时)
         _ = _manager.EnsureRunningAsync();
