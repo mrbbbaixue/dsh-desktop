@@ -34,11 +34,12 @@ public partial class App : Application
         NativeLoader.Ensure();
         base.OnStartup(e);
 
-        // 单实例:按目标端口隔离,重复启动只把已开窗口带到前台。
-        _single = new SingleInstance($"Local\\DshDesktop.SingleInstance.{_port}");
+        // 单实例互锁:同一用户会话全局唯一(与目标端口无关)。
+        // 已存在实例时,通知对方把窗口带到前台后立即退出,不重复拉起 dsh。
+        _single = new SingleInstance("Local\\DshDesktop.SingleInstance", RequestWakeFromSecondInstance);
         if (!_single.IsFirst)
         {
-            SingleInstance.ActivateExisting("DeepSeek Harness");
+            _single.NotifyExisting();
             Shutdown();
             return;
         }
@@ -62,6 +63,20 @@ public partial class App : Application
 
         // 后台拉起 dsh 服务(未启动时)
         _ = _manager.EnsureRunningAsync();
+    }
+
+    /// <summary>
+    /// 第二实例启动时在本进程触发:把主窗口带回前台(隐藏/最小化均恢复)。
+    /// 监听线程回调,须经 Dispatcher 切回 UI 线程。
+    /// </summary>
+    private void RequestWakeFromSecondInstance()
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (_exitRequested) return;
+            Log.Info("检测到重复启动,把主窗口带到前台");
+            _window?.Reveal();
+        });
     }
 
     /// <summary>显示主窗口;终身只创建一次。关窗是隐藏,最小化保持系统行为。</summary>
