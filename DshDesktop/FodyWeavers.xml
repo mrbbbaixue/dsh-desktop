@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Weavers xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="FodyWeavers.xsd">
+  <!-- 托管依赖嵌进 exe;.NET Framework 没有 PublishSingleFile -->
+  <!-- CreateTemporaryAssemblies:Core 解到磁盘后 Location 才有效,SDK 才能拼出 WebView2Loader 路径 -->
+  <Costura CreateTemporaryAssemblies="true" />
+</Weavers>

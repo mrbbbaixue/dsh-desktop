@@ -27,7 +27,7 @@ if (-not [string]::IsNullOrWhiteSpace($Tag)) {
     $version = $version.TrimStart('v')
 }
 
-Write-Host "发布 DshDesktop $version ($Runtime, net48)..." -ForegroundColor Cyan
+Write-Host "发布 DshDesktop $version ($Runtime, net48 Costura 单文件)..." -ForegroundColor Cyan
 
 $publishDir = Join-Path $root "$OutputDir/publish"
 $publishArgs = @(

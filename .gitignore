@@ -8,6 +8,9 @@ dist/
 dist-*/
 *.user
 
+# Fody 生成的 schema
+FodyWeavers.xsd
+
 # ---- Rider / VS ----
 .vs/
 .idea/

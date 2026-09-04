@@ -31,6 +31,7 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        NativeLoader.Ensure();
         base.OnStartup(e);
 
         // 单实例:按目标端口隔离,重复启动只把已开窗口带到前台。

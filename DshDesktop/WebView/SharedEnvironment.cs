@@ -15,6 +15,7 @@ internal static class SharedEnvironment
 
     public static async Task<CoreWebView2Environment> GetAsync(string userDataFolder)
     {
+        NativeLoader.Ensure();
         if (_instance is null)
         {
             var options = new CoreWebView2EnvironmentOptions

@@ -35,11 +35,11 @@ DshDesktop.exe
 git clone https://github.com/mrbbbaixue/dsh-desktop.git
 cd dsh-desktop
 dotnet test                        # 单元测试(ShellLogic 策略)
-./Scripts/build.ps1                # 打包:zip + SHA256(约数 MB,依赖系统自带的 .NET Framework 4.8)
+./Scripts/build.ps1                # 打包:zip + SHA256(Costura 单文件 exe + .config,依赖系统自带的 .NET Framework 4.8)
 ```
 
 产物在 `build\`:
-- `dsh-desktop-<版本>-win-x64.zip` — 依赖 Windows 自带的 .NET Framework 4.8 / 4.8.1,原版 Windows 11 可直接运行。解压后请整目录保留(exe 旁有 WebView2 依赖 DLL),双击 `DshDesktop.exe`。
+- `dsh-desktop-<版本>-win-x64.zip` — 依赖 Windows 自带的 .NET Framework 4.8 / 4.8.1。解压后是 `DshDesktop.exe` 与 `.config`(Costura 已把 WebView2 等托管 DLL 嵌进 exe),原版 Windows 11 可直接运行。
 
 推送 `vX.Y.Z` 标签会走 GitHub Actions:测试 → 打包 zip → 创建 [GitHub Release](https://github.com/mrbbbaixue/dsh-desktop/releases)。`main` / PR 也会上传产物到 workflow artifacts。编译需要 [.NET SDK](https://dotnet.microsoft.com/download)(10.x 即可)。
 
@@ -112,7 +112,7 @@ dotnet test
 ```
 
 Artifacts land in `build\`:
-- `dsh-desktop-<version>-win-x64.zip` — unzip and keep the folder together (WebView2 DLLs sit next to the exe), then run `DshDesktop.exe`
+- `dsh-desktop-<version>-win-x64.zip` — unzip and run `DshDesktop.exe` (Costura embeds WebView2 managed DLLs; keep the `.config` beside the exe)
 
 Pushing a `vX.Y.Z` tag runs GitHub Actions: test → zip → [GitHub Release](https://github.com/mrbbbaixue/dsh-desktop/releases). `main` / PRs also upload the zip as a workflow artifact.
 

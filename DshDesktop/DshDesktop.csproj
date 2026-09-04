@@ -23,6 +23,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4129.50" />
+    <PackageReference Include="Fody" Version="6.8.2" PrivateAssets="all" />
+    <PackageReference Include="Costura.Fody" Version="5.7.0" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
@@ -32,5 +34,17 @@
   <ItemGroup>
     <InternalsVisibleTo Include="DshDesktop.Tests" />
   </ItemGroup>
+
+  <!-- publish 会再次拷贝 nuget 原生/托管 DLL,Costura 织入后删掉旁路文件 -->
+  <Target Name="StripPublishedDependencies" AfterTargets="Publish">
+    <ItemGroup>
+      <_PublishExtra Include="$(PublishDir)*.dll" />
+      <_PublishExtra Include="$(PublishDir)runtimes\**\*" />
+      <_PublishExtra Include="$(PublishDir)*.pdb" />
+      <_PublishExtra Include="$(PublishDir)*.xml" />
+    </ItemGroup>
+    <Delete Files="@(_PublishExtra)" TreatErrorsAsWarnings="true" />
+    <RemoveDir Directories="$(PublishDir)runtimes" Condition="Exists('$(PublishDir)runtimes')" />
+  </Target>
 
 </Project>
