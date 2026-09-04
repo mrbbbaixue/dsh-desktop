@@ -28,7 +28,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 窗口图标:彩色 256;托盘图标:制作期烘焙的固定黑/白两套多尺寸 ico,运行时不再染色 -->
     <EmbeddedResource Include="Resources\favicon.png" />
+    <EmbeddedResource Include="Resources\favicon-black.ico" />
+    <EmbeddedResource Include="Resources\favicon-white.ico" />
   </ItemGroup>
 
   <ItemGroup>
