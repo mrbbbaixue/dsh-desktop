@@ -115,6 +115,8 @@ public partial class App : Application
     private void RequestExit()
     {
         _exitRequested = true;
+        // 真正退出前保存窗口状态(隐藏到托盘不触发)
+        try { _window?.SaveWindowState(); } catch { /* 保存失败不影响退出 */ }
         Shutdown();
     }
 

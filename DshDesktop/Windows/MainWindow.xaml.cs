@@ -11,6 +11,7 @@ namespace DshDesktop.Windows;
 /// <summary>
 /// 主窗口:WebView2 填充 + 系统原生标题栏(深浅色跟随系统)。
 /// 关窗只隐藏到托盘,WebView 继续在后台跑;同一实例贯穿整个进程。最小化走系统默认。
+/// 窗口尺寸/最大化状态记忆在 %USERPROFILE%\.dsh\desktop.ini,启动恢复、退出前保存。
 /// 仅首次就绪或 dsh 换了启动 URL(重启后新的 launch-token)才导航。
 /// </summary>
 public partial class MainWindow : Window
@@ -20,17 +21,21 @@ public partial class MainWindow : Window
 
     private readonly string _userDataFolder;
     private readonly DshProcessManager _manager;
+    private readonly WindowPrefs _prefs;
     private bool _webReady;
     private bool _navigateInFlight;
     private string? _navigatedUrl;
 
-    public MainWindow(DshProcessManager manager)
+    public MainWindow(DshProcessManager manager, WindowPrefs? prefs = null)
     {
         InitializeComponent();
         _manager = manager;
+        _prefs = prefs ?? new WindowPrefs();
         _userDataFolder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "DshDesktop", "WebView2");
+
+        RestoreWindowState();
 
         Icon = AppIcons.LoadWindowIcon();
         SourceInitialized += (_, _) =>
@@ -38,6 +43,37 @@ public partial class MainWindow : Window
             ThemeManager.Apply(this);
             HookSystemThemeChange();
         };
+    }
+
+    /// <summary>启动时按记忆恢复窗口尺寸与最大化状态;数据损坏/越界时回退默认。</summary>
+    private void RestoreWindowState()
+    {
+        _prefs.TryLoad();
+        if (_prefs.Width >= MinWidth && _prefs.Height >= MinHeight)
+        {
+            Width = _prefs.Width;
+            Height = _prefs.Height;
+        }
+        if (_prefs.Maximized)
+            WindowState = WindowState.Maximized;
+    }
+
+    /// <summary>退出前把当前窗口状态写回配置文件(最大化时记录还原尺寸)。</summary>
+    public void SaveWindowState()
+    {
+        if (WindowState == WindowState.Maximized)
+        {
+            _prefs.Width = RestoreBounds.Width;
+            _prefs.Height = RestoreBounds.Height;
+            _prefs.Maximized = true;
+        }
+        else
+        {
+            _prefs.Width = ActualWidth;
+            _prefs.Height = ActualHeight;
+            _prefs.Maximized = false;
+        }
+        _prefs.Save();
     }
 
     private void HookSystemThemeChange()
