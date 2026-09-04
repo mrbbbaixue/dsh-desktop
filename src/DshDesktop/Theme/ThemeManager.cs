@@ -8,7 +8,7 @@ namespace DshDesktop.Theme;
 /// <summary>
 /// 系统深浅色:原生标题栏跟随应用主题,托盘图标跟随任务栏主题。
 /// 无手动开关。窗口侧由 MainWindow 的 WM_SETTINGCHANGE(ImmersiveColorSet) 驱动;
-/// 托盘侧由 TrayIcon 订阅 SystemEvents.UserPreferenceChanged 驱动(开机自启无窗口时也能切)。
+/// 托盘侧由 TrayIcon 订阅 SystemEvents.UserPreferenceChanged 驱动(关窗藏托盘时也能切)。
 /// </summary>
 internal static class ThemeManager
 {

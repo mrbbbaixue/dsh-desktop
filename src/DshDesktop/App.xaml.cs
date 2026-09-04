@@ -1,12 +1,12 @@
 // 项目同时启用 UseWPF + UseWindowsForms(托盘),此处用别名消除 System.Windows.Forms.Application 歧义
 using System.Windows;
+using Microsoft.Win32;
 using Application = System.Windows.Application;
 
 namespace DshDesktop;
 
 /// <summary>
 /// 应用入口:单实例、托盘生命周期、dsh 进程管理、主窗口。
-/// - 窗口懒创建:开机自启(--minimized)时后台运行,不创建窗口、不抢前台;托盘"打开窗口"才创建
 /// - 窗口关闭时隐藏到托盘(服务常驻),托盘"退出"才真正退出并停止服务
 /// - 注销/关机(SessionEnding)时停止 dsh,避免子进程残留
 /// </summary>
@@ -43,8 +43,8 @@ public partial class App : Application
 
         Log.Init();
         Log.Info($"DshDesktop 启动: url={_url} args={string.Join(' ', e.Args)}");
-        // 启动即探测 Node.js / npm / dsh,一行写清"已安装还是未安装",
-        // 后台自启(--minimized)无窗口时也便于从日志定位"dsh web 起不来"的原因。
+        ClearLegacyAutostart();
+        // 启动即探测 Node.js / npm / dsh,一行写清"已安装还是未安装"。
         Log.Info($"环境检测: {ShellLogic.FormatRuntimeSummary(ShellLogic.ProbeRuntime())}");
 
         _manager!.StateChanged += state =>
@@ -56,17 +56,13 @@ public partial class App : Application
 
         _tray = new TrayIcon(_manager, openWindow: ShowMainWindow, exitApp: RequestExit);
         _tray.Show();
-
-        // 开机自启(--minimized):不创建窗口,托盘常驻、服务后台拉起,绝不抢前台
-        var minimized = e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase);
-        if (!minimized)
-            ShowMainWindow();
+        ShowMainWindow();
 
         // 后台拉起 dsh 服务(未启动时)
         _ = _manager.EnsureRunningAsync();
     }
 
-    /// <summary>显示主窗口;首次调用时懒创建(后台自启时不占窗口资源)。</summary>
+    /// <summary>显示主窗口;首次调用时创建,之后只激活已有窗口。</summary>
     private void ShowMainWindow()
     {
         if (_manager is null) return;
@@ -84,6 +80,18 @@ public partial class App : Application
         _window.Show();
         _window.Activate();
         _ = _window.NavigateWhenReadyAsync();
+    }
+
+    /// <summary>清掉旧版写入 HKCU Run 的开机自启项,避免升级后仍被拉起。</summary>
+    private static void ClearLegacyAutostart()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
+            key?.DeleteValue("DshDesktop", throwOnMissingValue: false);
+        }
+        catch { /* 清不掉不影响主流程 */ }
     }
 
     private void RequestExit()

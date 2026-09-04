@@ -10,7 +10,7 @@ namespace DshDesktop.Windows;
 
 /// <summary>
 /// 主窗口:WebView2 填充 + 系统原生标题栏(深浅色跟随系统)。
-/// WebView2 首次显示时才初始化(懒加载),避免开机自启 --minimized 时白占内存。
+/// WebView2 首次显示时才初始化(懒加载)。
 /// </summary>
 public partial class MainWindow : Window
 {

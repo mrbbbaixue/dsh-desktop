@@ -12,7 +12,6 @@
 - ⚙️ **独立子进程托管 dsh** — 壳自己拉起、自己停止,只管理这一棵进程树;不接管、不误杀端口上其它进程;启动参数与页面访问地址同源;意外退出自动重启(节流防循环)
 - 🖥️ **系统托盘** — 右键托盘菜单可随时 **启动 / 重启 / 停止** dsh 服务;关窗隐藏到托盘,服务常驻
 - 🎨 **原生标题栏深浅色** — 自动跟随 Windows 深浅色主题,无需手动切换
-- 🚀 **开机自启** — 托盘菜单一键开启(仅当前用户,`--minimized` 静默启动不弹窗)
 - 🔌 **自动拉起** — 服务没开时自动启动并等待就绪;就绪后窗口自动加载
 - 🔎 **环境检测** — 启动时在窗口与日志中显示一行"已安装/未安装":Node.js、npm、dsh;Node.js 缺失时直接提示安装,不再只报笼统的"未能就绪"
 - 📋 **日志** — `%USERPROFILE%\.dsh-desktop.log`
@@ -86,7 +85,6 @@ dotnet test                        # 单元测试(ShellLogic 策略)
 - ⚙️ **Managed child process** — the shell starts and stops its own dsh child tree only (no VBS); it will not adopt or kill other processes on the port; launch args share the window's resolved port; auto-restarts on unexpected exit (throttled)
 - 🖥️ **System tray** — right-click to **start / restart / stop** the dsh service; closing the window hides to tray, the service keeps running
 - 🎨 **Native title bar theme** — automatically follows the Windows dark/light mode
-- 🚀 **Autostart** — one click in the tray menu (current user only, `--minimized` starts silently)
 - 🔌 **Auto-launch** — starts the service if not running and waits until ready
 - 📋 **Logging** — `%USERPROFILE%\.dsh-desktop.log`
 

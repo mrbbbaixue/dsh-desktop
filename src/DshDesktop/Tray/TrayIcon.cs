@@ -6,7 +6,7 @@ using Microsoft.Win32;
 namespace DshDesktop.Tray;
 
 /// <summary>
-/// 系统托盘:进程控制(启动/重启/停止)、开机自启开关、打开窗口、退出。
+/// 系统托盘:进程控制(启动/重启/停止)、打开窗口、退出。
 /// dsh 服务常驻时关窗隐藏到托盘,进程生命周期由托盘菜单管理。
 /// 图标按任务栏深浅色在黑/白两套之间实时切换(浅色任务栏用黑标,深色用白标)。
 /// </summary>
@@ -19,7 +19,6 @@ internal sealed class TrayIcon : IDisposable
     private readonly ToolStripMenuItem _miStart;
     private readonly ToolStripMenuItem _miRestart;
     private readonly ToolStripMenuItem _miStop;
-    private readonly ToolStripMenuItem _miAutostart;
     private bool? _lightTaskbar;
     private bool _disposed;
 
@@ -41,29 +40,12 @@ internal sealed class TrayIcon : IDisposable
         _miStop = new ToolStripMenuItem("停止 dsh 服务");
         _miStop.Click += async (_, _) => await RunAsync(_manager.StopAsync());
 
-        _miAutostart = new ToolStripMenuItem("开机自启") { Checked = Autostart.IsEnabled() };
-        _miAutostart.Click += (_, _) =>
-        {
-            var enable = !Autostart.IsEnabled();
-            try
-            {
-                Autostart.SetEnabled(enable);
-                _miAutostart.Checked = enable;
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"设置开机自启失败: {ex.Message}");
-            }
-        };
-
         var menu = new ContextMenuStrip();
         menu.Items.Add("打开窗口", null, (_, _) => openWindow());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_miStart);
         menu.Items.Add(_miRestart);
         menu.Items.Add(_miStop);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(_miAutostart);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => exitApp());
         _notify.ContextMenuStrip = menu;
