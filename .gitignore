@@ -12,7 +12,7 @@ dist-*/
 *.suo
 
 # ---- WebView2 运行时缓存 ----
-src/DshDesktop/WebView2/
+DshDesktop/WebView2/
 
 # ---- 日志 ----
 *.log

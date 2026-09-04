@@ -7,7 +7,8 @@ namespace DshDesktop;
 
 /// <summary>
 /// 应用入口:单实例、托盘生命周期、dsh 进程管理、主窗口。
-/// - 窗口关闭时隐藏到托盘(服务常驻),托盘"退出"才真正退出并停止服务
+/// - 只有一个主窗口:关窗/最小化都是隐藏,WebView 后台继续跑;托盘打开只激活,不重载
+/// - 托盘「退出」才真正退出并停止服务
 /// - 注销/关机(SessionEnding)时停止 dsh,避免子进程残留
 /// </summary>
 public partial class App : Application
@@ -62,24 +63,31 @@ public partial class App : Application
         _ = _manager.EnsureRunningAsync();
     }
 
-    /// <summary>显示主窗口;首次调用时创建,之后只激活已有窗口。</summary>
+    /// <summary>显示主窗口;终身只创建一次,之后关窗/最小化都是隐藏再激活。</summary>
     private void ShowMainWindow()
     {
         if (_manager is null) return;
         if (_window is null)
         {
-            _window = new MainWindow(_url, _manager);
-            // 点关闭按钮 → 隐藏到托盘,进程与窗口对象都保留
+            _window = new MainWindow(_manager);
             _window.Closing += (_, ev) =>
             {
                 if (_exitRequested) return;
                 ev.Cancel = true;
-                _window.Hide();
+                _window.HideToBackground();
             };
+            _window.StateChanged += (_, _) =>
+            {
+                if (_exitRequested) return;
+                if (_window.WindowState == WindowState.Minimized)
+                    _window.HideToBackground();
+            };
+            _window.Show();
+            _window.Activate();
+            _ = _window.NavigateWhenReadyAsync();
+            return;
         }
-        _window.Show();
-        _window.Activate();
-        _ = _window.NavigateWhenReadyAsync();
+        _window.Reveal();
     }
 
     /// <summary>清掉旧版写入 HKCU Run 的开机自启项,避免升级后仍被拉起。</summary>

@@ -34,10 +34,20 @@ public sealed class DshProcessManager : IDisposable
     private int _consecutiveFailures;
     private bool _disposed;
     private Func<int, LaunchPlan>? _buildLaunchPlan;
+    private string? _sessionUrl;
 
     public string Url { get; }
     public int Port { get; }
     public ServiceState State { get; private set; } = ServiceState.Stopped;
+
+    /// <summary>
+    /// 窗口应打开的地址:优先用子进程打印的 `dsh web:` URL(含 launch-token),
+    /// 尚未捕获时回退到构造时的裸地址。
+    /// </summary>
+    public string NavigateUrl
+    {
+        get { lock (_gate) return _sessionUrl ?? Url; }
+    }
 
     /// <summary>状态变化事件(任意线程触发,订阅方需自行切到 UI 线程)。</summary>
     public event Action<ServiceState>? StateChanged;
@@ -134,8 +144,8 @@ public sealed class DshProcessManager : IDisposable
             lock (_gate) _process = p;
             Log.Info($"dsh 子进程已启动 PID={p.Id}");
             p.EnableRaisingEvents = true;
-            p.OutputDataReceived += (_, e) => { if (e.Data is not null) Log.Info($"[dsh] {e.Data}"); };
-            p.ErrorDataReceived += (_, e) => { if (e.Data is not null) Log.Error($"[dsh] {e.Data}"); };
+            p.OutputDataReceived += (_, e) => { if (e.Data is not null) OnDshLine(e.Data, error: false); };
+            p.ErrorDataReceived += (_, e) => { if (e.Data is not null) OnDshLine(e.Data, error: true); };
             p.BeginOutputReadLine();
             p.BeginErrorReadLine();
             p.Exited += OnProcessExited;
@@ -177,6 +187,7 @@ public sealed class DshProcessManager : IDisposable
             // 只响应当前子进程;KillOwnProcess 之后的过期 Exited 一律忽略
             if (!ReferenceEquals(_process, sender)) return;
             _process = null;
+            _sessionUrl = null;
         }
 
         var code = -1;
@@ -273,19 +284,39 @@ public sealed class DshProcessManager : IDisposable
         return State == ServiceState.Running;
     }
 
-    /// <summary>等自己的子进程把端口打开;子进程已退出则失败。</summary>
+    /// <summary>
+    /// 等自己的子进程把端口打开,并尽量等到 stdout 打出 `dsh web:` URL
+    /// (0.1.2+ 带一次性 token,必须用这条 URL 打开页面)。
+    /// 超时仍无 URL 但端口已开 → 按旧版 dsh 处理,回退裸地址。
+    /// </summary>
     private async Task<bool> WaitOwnReadyAsync(TimeSpan timeout)
     {
         var sw = Stopwatch.StartNew();
         while (sw.Elapsed < timeout)
         {
             Process? p;
-            lock (_gate) p = _process;
+            string? session;
+            lock (_gate) { p = _process; session = _sessionUrl; }
             if (p is null || p.HasExited) return false;
-            if (PortOpen(Port)) return true;
+            if (session is not null && PortOpen(Port)) return true;
             await Task.Delay(500);
         }
         return ProcessAlive() && PortOpen(Port);
+    }
+
+    private void OnDshLine(string line, bool error)
+    {
+        if (error) Log.Error($"[dsh] {line}");
+        else Log.Info($"[dsh] {line}");
+
+        var url = ShellLogic.ParseDshWebUrl(line);
+        if (url is null) return;
+        lock (_gate)
+        {
+            if (_sessionUrl == url) return;
+            _sessionUrl = url;
+        }
+        Log.Info($"捕获 dsh web URL: {url}");
     }
 
     private async Task WaitPortClosedAsync(TimeSpan timeout) =>
@@ -314,6 +345,7 @@ public sealed class DshProcessManager : IDisposable
         {
             p = _process;
             _process = null;
+            _sessionUrl = null;
             job = _job;
         }
         if (p is not null)

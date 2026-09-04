@@ -3,10 +3,11 @@ name: build
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
 
 jobs:
-  build:
+  test:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -18,11 +19,46 @@ jobs:
       - name: Build & test
         run: dotnet test -c Release
 
-      - name: Publish single-file
-        run: dotnet publish src/DshDesktop -c Release -r win-x64 -o dist
+  publish:
+    needs: test
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
-      - name: Upload artifact
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish framework-dependent
+        shell: pwsh
+        run: |
+          $tag = if ($env:GITHUB_REF.StartsWith('refs/tags/')) { $env:GITHUB_REF_NAME } else { '' }
+          if ($tag) { ./Scripts/build.ps1 -Tag $tag } else { ./Scripts/build.ps1 }
+
+      - name: Publish self-contained
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: ./Scripts/build.ps1 -SelfContained -Tag "${{ github.ref_name }}"
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v5
         with:
-          name: DshDesktop-win-x64
-          path: dist/DshDesktop.exe
+          name: dsh-desktop-win-x64
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $assets = @(Get-ChildItem dist -File |
+            Where-Object { $_.Name -like '*.zip' -or $_.Name -eq 'SHA256SUMS.txt' } |
+            ForEach-Object FullName)
+          gh release create "${{ github.ref_name }}" @assets --generate-notes --title "${{ github.ref_name }}"

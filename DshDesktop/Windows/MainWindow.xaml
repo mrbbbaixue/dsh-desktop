@@ -5,8 +5,7 @@
         Title="DeepSeek Harness"
         Width="1280" Height="840"
         MinWidth="800" MinHeight="600"
-        WindowStartupLocation="CenterScreen"
-        Loaded="Window_Loaded">
+        WindowStartupLocation="CenterScreen">
     <Grid>
         <wv2:WebView2 x:Name="WebView" />
         <!-- 服务未就绪时的等待/失败遮罩 -->

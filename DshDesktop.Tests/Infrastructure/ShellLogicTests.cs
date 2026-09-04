@@ -162,6 +162,37 @@ public class ShellLogicTests
         Assert.Equal("127.0.0.1", args[2]);
         Assert.Equal("--port", args[3]);
         Assert.Equal("9000", args[4]);
+        Assert.Contains("--no-open", args);
+    }
+
+    // ---- ParseDshWebUrl ----
+
+    [Theory]
+    [InlineData("dsh web: http://127.0.0.1:3080/?token=abc123", "http://127.0.0.1:3080/?token=abc123")]
+    [InlineData("dsh web: http://127.0.0.1:3080", "http://127.0.0.1:3080/")]
+    [InlineData("  dsh web:  http://127.0.0.1:9000/?token=xyz  ", "http://127.0.0.1:9000/?token=xyz")]
+    [InlineData("dsh web: http://localhost:3080/?token=t", "http://localhost:3080/?token=t")]
+    public void ParseDshWebUrl_ExtractsUrl(string line, string expected)
+    {
+        Assert.Equal(expected, ShellLogic.ParseDshWebUrl(line));
+    }
+
+    [Fact]
+    public void ParseDshWebUrl_StripsAnsi()
+    {
+        var line = "\u001b[32mdsh web:\u001b[0m http://127.0.0.1:3080/?token=abc";
+        Assert.Equal("http://127.0.0.1:3080/?token=abc", ShellLogic.ParseDshWebUrl(line));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("listening on 3080")]
+    [InlineData("dsh web starting")]
+    [InlineData("web: http://127.0.0.1:3080")]
+    public void ParseDshWebUrl_NonMatch_ReturnsNull(string? line)
+    {
+        Assert.Null(ShellLogic.ParseDshWebUrl(line));
     }
 
     // ---- FormatRuntimeSummary ----

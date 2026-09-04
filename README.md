@@ -35,13 +35,20 @@ DshDesktop.exe
 git clone https://github.com/mrbbbaixue/dsh-desktop.git
 cd dsh-desktop
 dotnet test                        # 单元测试(ShellLogic 策略)
-./scripts/publish.ps1              # 打包:zip + SHA256(框架依赖单文件,约 2.3MB)
-./scripts/publish.ps1 -SelfContained   # 自包含单文件(内置 .NET 运行时,约 175MB,免装运行时)
+./Scripts/build.ps1                # 打包:zip + SHA256(框架依赖单文件,约 2.3MB)
+./Scripts/build.ps1 -SelfContained # 自包含单文件(内置 .NET 运行时,约 175MB,免装运行时)
 ```
 
 单文件发布配置已固化在 `DshDesktop.csproj`(WebView2Loader.dll 与托管依赖一并嵌入,发布目录只有一个 exe)。产物在 `dist\`:
 - `dsh-desktop-<版本>-win-x64-framework-dependent.zip` — 默认,需 .NET Desktop Runtime 10
 - `dsh-desktop-<版本>-win-x64-self-contained.zip` — 免装运行时,仅需 WebView2 Runtime(Windows 10/11 自带)
+
+推送 `vX.Y.Z` 标签会走 GitHub Actions:测试 → 打两种 zip → 创建 [GitHub Release](https://github.com/mrbbbaixue/dsh-desktop/releases)。`main` / PR 也会上传框架依赖产物到 workflow artifacts。
+
+```powershell
+git tag v1.1.0
+git push origin v1.1.0
+```
 
 ## 常见问题
 
@@ -53,6 +60,9 @@ dotnet test                        # 单元测试(ShellLogic 策略)
 
 **Q:窗口一直显示"正在启动 dsh 服务…"?**
 等待页下方有一行环境检测(如 `Node.js 已安装 (v22.14.0) · npm 已安装 · dsh 未安装(将自动用 npx 启动)`)。若显示 `Node.js 未安装`,请先安装 Node.js 后从托盘菜单重试。服务 90 秒内未就绪(常见于 npx 首次下载慢)时,壳会在后台继续等待,下载完成会自动加载页面;也可设置 `DSH_NPM_REGISTRY` 镜像后,托盘菜单「重启 dsh 服务」。
+
+**Q:窗口显示 `dsh web authentication required; reopen the URL printed by dsh web`?**
+新版 dsh(0.1.2+)用一次性 launch-token 换 cookie,直接打开 `http://127.0.0.1:3080` 会 401。壳会从子进程输出里读取 `dsh web:` 那条完整 URL 再导航;若仍看到此提示,从托盘菜单「重启 dsh 服务」。
 
 **Q:网页里"选择目录"报 `directory picker failed: spawn C:\Program Files\nodejs\node.exe ENOENT`,或日志写"端口已被占用"?**
 3080 端口被其它程序(或以前残留的 dsh)占用时,壳不会接管、也不会去杀那个进程。请先手动结束占用端口的程序,再从托盘菜单「启动 / 重启 dsh 服务」。确认 Node.js 已安装后重试。

@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\DshDesktop\DshDesktop.csproj" />
+    <ProjectReference Include="..\DshDesktop\DshDesktop.csproj" />
   </ItemGroup>
 
 </Project>

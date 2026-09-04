@@ -10,22 +10,23 @@ namespace DshDesktop.Windows;
 
 /// <summary>
 /// 主窗口:WebView2 填充 + 系统原生标题栏(深浅色跟随系统)。
-/// WebView2 首次显示时才初始化(懒加载)。
+/// 关窗/最小化只隐藏,WebView 继续在后台跑;同一实例贯穿整个进程。
+/// 仅首次就绪或 dsh 换了启动 URL(重启后新的 launch-token)才导航。
 /// </summary>
 public partial class MainWindow : Window
 {
     private const int WM_SETTINGCHANGE = 0x001A;
     private const string ImmersiveColorSet = "ImmersiveColorSet";
 
-    private readonly string _url;
     private readonly string _userDataFolder;
     private readonly DshProcessManager _manager;
     private bool _webReady;
+    private bool _navigateInFlight;
+    private string? _navigatedUrl;
 
-    public MainWindow(string url, DshProcessManager manager)
+    public MainWindow(DshProcessManager manager)
     {
         InitializeComponent();
-        _url = url;
         _manager = manager;
         _userDataFolder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -60,21 +61,55 @@ public partial class MainWindow : Window
         return IntPtr.Zero;
     }
 
-    private async void Window_Loaded(object sender, RoutedEventArgs e)
+    /// <summary>关窗/最小化:隐藏到托盘,不销毁、不切最小化态,WebView 继续渲染。</summary>
+    public void HideToBackground()
     {
-        await NavigateWhenReadyAsync();
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+        if (IsVisible)
+            Hide();
+    }
+
+    /// <summary>托盘「打开窗口」:只把已有窗口带回来,不重新导航。</summary>
+    public void Reveal()
+    {
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+        Show();
+        Activate();
     }
 
     /// <summary>
     /// 初始化 WebView2(首次)并等待 dsh 服务就绪后导航。
-    /// 幂等:重启服务后再次调用即重新加载页面。
-    /// 遮罩上同时显示一行环境检测(Node.js / npm / dsh 已安装还是未安装),
-    /// 未检测到 Node.js 时给出明确指引,不再只显示笼统的"未能就绪"。
+    /// 同一 session URL 只导航一次;dsh 重启换了 launch-token 才会再加载。
+    /// 遮罩上同时显示一行环境检测(Node.js / npm / dsh 已安装还是未安装)。
     /// </summary>
     public async Task NavigateWhenReadyAsync()
     {
+        if (_navigateInFlight) return;
+        _navigateInFlight = true;
+        try
+        {
+            await NavigateWhenReadyCoreAsync();
+        }
+        finally
+        {
+            _navigateInFlight = false;
+        }
+    }
+
+    private async Task NavigateWhenReadyCoreAsync()
+    {
         if (!await InitializeWebViewAsync())
             return;
+
+        if (WebView.CoreWebView2 is not null
+            && _manager.State == DshProcessManager.ServiceState.Running
+            && string.Equals(_navigatedUrl, _manager.NavigateUrl, StringComparison.Ordinal))
+        {
+            StatusOverlay.Visibility = Visibility.Collapsed;
+            return;
+        }
 
         StatusOverlay.Visibility = Visibility.Visible;
         StatusProgress.IsIndeterminate = true;
@@ -86,8 +121,16 @@ public partial class MainWindow : Window
         var ready = await _manager.WaitReadyAsync(TimeSpan.FromSeconds(95));
         if (ready && WebView.CoreWebView2 is not null)
         {
+            var target = _manager.NavigateUrl;
+            if (string.Equals(_navigatedUrl, target, StringComparison.Ordinal))
+            {
+                StatusOverlay.Visibility = Visibility.Collapsed;
+                return;
+            }
             StatusOverlay.Visibility = Visibility.Collapsed;
-            WebView.CoreWebView2.Navigate(_url);
+            Log.Info($"导航 WebView: {target}");
+            WebView.CoreWebView2.Navigate(target);
+            _navigatedUrl = target;
         }
         else
         {
@@ -110,12 +153,8 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>服务就绪事件触发的刷新(窗口可见时才动作,避免隐藏窗口上无谓导航)。</summary>
-    public void ReloadWhenReadyAsync()
-    {
-        if (IsVisible)
-            _ = NavigateWhenReadyAsync();
-    }
+    /// <summary>dsh 进入 Running 时刷新(含窗口隐藏:后台 WebView 也要换新 token)。</summary>
+    public void ReloadWhenReadyAsync() => _ = NavigateWhenReadyAsync();
 
     private async Task<bool> InitializeWebViewAsync()
     {

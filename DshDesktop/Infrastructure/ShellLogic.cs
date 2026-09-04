@@ -194,9 +194,31 @@ public static class ShellLogic
     /// dsh web 服务的命令行参数(不含可执行文件):固定监听回环地址与解析端口。
     /// 启动 dsh 与窗口导航必须使用同一端口(ShellLogic.ResolveTarget 的产物),
     /// 此处集中生成,避免任何一处写死默认端口造成"服务起来了但页面访问不到"的错位。
+    /// --no-open:壳自己打开 WebView,禁止 dsh 再拉系统浏览器(否则会先消耗一次性 launch-token)。
     /// </summary>
     internal static string[] BuildDshWebArgs(int port) =>
-        ["web", "--host", "127.0.0.1", "--port", port.ToString()];
+        ["web", "--host", "127.0.0.1", "--port", port.ToString(), "--no-open"];
+
+    private static readonly Regex AnsiCsi = new(@"\x1B\[[0-9;?]*[ -/]*[@-~]", RegexOptions.Compiled);
+    private static readonly Regex DshWebUrlLine = new(
+        @"dsh\s+web:\s*(https?://[^\s""'<>]+)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// 从 dsh 子进程一行输出里提取启动 URL(含 0.1.2+ 的一次性 launch-token)。
+    /// 匹配 `dsh web: http(s)://…`;无匹配返回 null。会去掉 ANSI 颜色码。
+    /// </summary>
+    internal static string? ParseDshWebUrl(string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line)) return null;
+        var s = AnsiCsi.Replace(line, "");
+        var m = DshWebUrlLine.Match(s);
+        if (!m.Success) return null;
+        var raw = m.Groups[1].Value.TrimEnd('.', ',', ';', ')', ']');
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri)) return null;
+        if (uri.Scheme is not ("http" or "https")) return null;
+        return uri.AbsoluteUri;
+    }
 
 
     /// <summary>where.exe 探测命令是否在 PATH 中(找不到/超时/异常均视为未安装)。</summary>
