@@ -8,8 +8,8 @@ using Microsoft.Win32;
 namespace DshDesktop.Tray;
 
 /// <summary>
-/// 系统托盘:进程控制(启动/重启/停止)、打开窗口、退出。
-/// dsh 服务常驻时关窗隐藏到托盘,进程生命周期由托盘菜单管理。
+/// 系统托盘:服务控制(重启)、显示/隐藏 dsh 终端(后台控制台)、打开窗口、退出。
+/// dsh 服务常驻时关窗隐藏到托盘,进程生命周期由壳自动托管。
 /// 图标按任务栏深浅色实时切换为黑/白剪影(浅色任务栏用黑标,深色用白标);
 /// 同步把主窗口任务栏大图标换为同一套黑白 ICO,保持两处深浅色一致。
 /// </summary>
@@ -20,9 +20,8 @@ internal sealed class TrayIcon : IDisposable
     private MainWindow? _window;
     private readonly Icon? _black;
     private readonly Icon? _white;
-    private readonly ToolStripMenuItem _miStart;
     private readonly ToolStripMenuItem _miRestart;
-    private readonly ToolStripMenuItem _miStop;
+    private readonly ToolStripMenuItem _miTerminal;
     private bool? _lightTaskbar;
     private bool _disposed;
 
@@ -38,21 +37,23 @@ internal sealed class TrayIcon : IDisposable
         _notify.Visible = true;
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
 
-        _miStart = new ToolStripMenuItem("启动 dsh 服务");
-        _miStart.Click += async (_, _) => await RunAsync(_manager.EnsureRunningAsync());
         _miRestart = new ToolStripMenuItem("重启 dsh 服务");
         _miRestart.Click += async (_, _) => await RunAsync(_manager.RestartAsync());
-        _miStop = new ToolStripMenuItem("停止 dsh 服务");
-        _miStop.Click += async (_, _) => await RunAsync(_manager.StopAsync());
+        _miTerminal = new ToolStripMenuItem("显示 dsh 终端");
+        _miTerminal.Click += (_, _) =>
+        {
+            _manager.SetConsoleVisible(!_manager.IsConsoleVisible);
+            UpdateState();
+        };
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("打开窗口", null, (_, _) => openWindow());
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(_miStart);
         menu.Items.Add(_miRestart);
-        menu.Items.Add(_miStop);
+        menu.Items.Add(_miTerminal);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => exitApp());
+        menu.Opening += (_, _) => UpdateState();
         _notify.ContextMenuStrip = menu;
 
         // 双击托盘图标打开窗口
@@ -117,12 +118,17 @@ internal sealed class TrayIcon : IDisposable
             DshProcessManager.ServiceState.Running => "DeepSeek Harness — dsh 运行中",
             DshProcessManager.ServiceState.Starting => "DeepSeek Harness — dsh 启动中…",
             DshProcessManager.ServiceState.Stopping => "DeepSeek Harness — dsh 停止中…",
-            DshProcessManager.ServiceState.Failed => "DeepSeek Harness — dsh 异常,右键重试",
+            DshProcessManager.ServiceState.Failed => "DeepSeek Harness — dsh 异常,右键重启",
             _ => "DeepSeek Harness — dsh 已停止",
         };
-        _miStart.Enabled = s is DshProcessManager.ServiceState.Stopped or DshProcessManager.ServiceState.Failed;
-        _miRestart.Enabled = s is DshProcessManager.ServiceState.Running or DshProcessManager.ServiceState.Failed;
-        _miStop.Enabled = s is DshProcessManager.ServiceState.Running or DshProcessManager.ServiceState.Starting;
+        // 服务由壳自动托管,不提供单独停止;重启只在"能到达运行态"的状态下可用,
+        // 避免卡在启动中(例如 90s 等待)时重复点重启制造竞态。
+        _miRestart.Enabled = s is DshProcessManager.ServiceState.Running
+            or DshProcessManager.ServiceState.Failed
+            or DshProcessManager.ServiceState.Stopped;
+        // 启动中即可看 npx 下载等输出;句柄已绑上时即使状态抖动也可切换
+        _miTerminal.Enabled = _manager.CanToggleConsole;
+        _miTerminal.Text = _manager.IsConsoleVisible ? "隐藏 dsh 终端" : "显示 dsh 终端";
     }
 
     public void Dispose()

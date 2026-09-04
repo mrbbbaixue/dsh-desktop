@@ -172,6 +172,7 @@ public class ShellLogicTests
     [InlineData("dsh web: http://127.0.0.1:3080", "http://127.0.0.1:3080/")]
     [InlineData("  dsh web:  http://127.0.0.1:9000/?token=xyz  ", "http://127.0.0.1:9000/?token=xyz")]
     [InlineData("dsh web: http://localhost:3080/?token=t", "http://localhost:3080/?token=t")]
+    [InlineData("npx downloadingdsh web: http://127.0.0.1:3080/?token=abc123", "http://127.0.0.1:3080/?token=abc123")]
     public void ParseDshWebUrl_ExtractsUrl(string line, string expected)
     {
         Assert.Equal(expected, ShellLogic.ParseDshWebUrl(line));

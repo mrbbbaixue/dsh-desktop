@@ -7,7 +7,7 @@ namespace DshDesktop.Services;
 /// <summary>
 /// dsh 服务进程管理器:用本进程的子进程拉起 dsh,并独自跟踪其生命周期。
 /// - 优先 PATH 中的 `dsh`,回退 `npx -y @deepseek-ai/dsh`(可用 DSH_NPM_REGISTRY 指定 npm 镜像)
-/// - 全程静默(无控制台窗口、无 vbs 等脚本文件),输出重定向到日志
+/// - 以隐藏控制台窗口拉起(无 vbs 等脚本文件);托盘可显示/隐藏该终端查看实时输出
 /// - 只杀自己拉起的子进程树,不接管、不清理端口上已有的其它进程
 /// - 意外退出自动重启(节流 + 失败上限);壳退出(含强杀)时由 Job Object 连带终止子进程
 /// - 设置 DSH_WEB_URL 时视为外部托管服务,不拉起也不停止
@@ -35,10 +35,40 @@ public sealed class DshProcessManager : IDisposable
     private bool _disposed;
     private Func<int, LaunchPlan>? _buildLaunchPlan;
     private string? _sessionUrl;
+    private IntPtr _consoleHwnd;
+    private bool _consoleWantedVisible;
+    private string _lastConsoleSnapshot = "";
 
     public string Url { get; }
     public int Port { get; }
     public ServiceState State { get; private set; } = ServiceState.Stopped;
+
+    /// <summary>
+    /// 托盘「显示/隐藏 dsh 终端」是否可点:有自己拉起的子进程(句柄可能还在绑定中)。
+    /// 外部托管服务没有后台控制台,返回 false。
+    /// </summary>
+    public bool CanToggleConsole
+    {
+        get
+        {
+            lock (_gate)
+            {
+                if (_externalManaged) return false;
+                if (HiddenConsole.IsAlive(_consoleHwnd)) return true;
+                return _process is not null && !_process.HasExited;
+            }
+        }
+    }
+
+    /// <summary>后台控制台当前是否可见。用户点 X 以外的途径改变可见性时,以实际窗口为准。</summary>
+    public bool IsConsoleVisible
+    {
+        get
+        {
+            lock (_gate)
+                return HiddenConsole.IsAlive(_consoleHwnd) && HiddenConsole.IsVisible(_consoleHwnd);
+        }
+    }
 
     /// <summary>
     /// 窗口应打开的地址:优先用子进程打印的 `dsh web:` URL(含 launch-token),
@@ -47,6 +77,43 @@ public sealed class DshProcessManager : IDisposable
     public string NavigateUrl
     {
         get { lock (_gate) return _sessionUrl ?? Url; }
+    }
+
+    /// <summary>
+    /// 显示或隐藏后台控制台。默认隐藏;进程尚未绑上 HWND 时记下意图,绑定后补上。
+    /// 无子进程时返回 false。
+    /// </summary>
+    public bool SetConsoleVisible(bool visible)
+    {
+        int pid;
+        lock (_gate)
+        {
+            if (_process is null || _process.HasExited)
+                return false;
+            _consoleWantedVisible = visible;
+            pid = _process.Id;
+            if (HiddenConsole.IsAlive(_consoleHwnd))
+            {
+                if (visible) HiddenConsole.Show(_consoleHwnd);
+                else HiddenConsole.Hide(_consoleHwnd);
+                return true;
+            }
+        }
+        // 绑定尚未完成或失败时再找一次,找到则立刻按意图显示/隐藏
+        var hwnd = HiddenConsole.FindWindow(pid);
+        if (hwnd == IntPtr.Zero)
+            return true;
+        lock (_gate)
+        {
+            if (_process is null || _process.Id != pid)
+                return false;
+            _consoleHwnd = hwnd;
+            visible = _consoleWantedVisible;
+        }
+        HiddenConsole.DisableCloseButton(hwnd);
+        if (visible) HiddenConsole.Show(hwnd);
+        else HiddenConsole.Hide(hwnd);
+        return true;
     }
 
     /// <summary>状态变化事件(任意线程触发,订阅方需自行切到 UI 线程)。</summary>
@@ -117,36 +184,23 @@ public sealed class DshProcessManager : IDisposable
 
             KillOwnProcess();
             var plan = _buildLaunchPlan!(Port);
-            var cmdArgs = new List<string> { plan.Command };
-            cmdArgs.AddRange(plan.Args);
-            var psi = new ProcessStartInfo
-            {
-                FileName = "cmd.exe",
-                // /d 跳过 AutoRun,/c 后跟可执行文件与参数(.NET Framework 无 ArgumentList)
-                Arguments = "/d /c " + QuoteWin32Args(cmdArgs),
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WindowStyle = ProcessWindowStyle.Hidden,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-            foreach (var kv in plan.Environment)
-                psi.Environment[kv.Key] = kv.Value;
             Log.Info($"拉起 dsh: {plan.Command} {string.Join(" ", plan.Args)}");
 
-            var p = Process.Start(psi);
-            if (p is null)
-                throw new InvalidOperationException("Process.Start 返回 null");
-
+            // 隐藏控制台(CREATE_NEW_CONSOLE + SW_HIDE):输出进真实终端,不再重定向管道。
+            // launch-token 从屏幕缓冲抓;用户经托盘「显示 dsh 终端」看实时输出。
+            var p = HiddenConsole.Start("cmd.exe", BuildConsoleArguments(plan), plan.Environment);
             AssignToJob(p);
-            lock (_gate) _process = p;
+            lock (_gate)
+            {
+                _process = p;
+                _consoleHwnd = IntPtr.Zero;
+                _consoleWantedVisible = false;
+                _lastConsoleSnapshot = "";
+            }
             Log.Info($"dsh 子进程已启动 PID={p.Id}");
             p.EnableRaisingEvents = true;
-            p.OutputDataReceived += (_, e) => { if (e.Data is not null) OnDshLine(e.Data, error: false); };
-            p.ErrorDataReceived += (_, e) => { if (e.Data is not null) OnDshLine(e.Data, error: true); };
-            p.BeginOutputReadLine();
-            p.BeginErrorReadLine();
             p.Exited += OnProcessExited;
+            _ = BindConsoleWindowAsync(p);
 
             var ready = await WaitOwnReadyAsync(TimeSpan.FromSeconds(90));
             if (ready)
@@ -186,6 +240,9 @@ public sealed class DshProcessManager : IDisposable
             if (!ReferenceEquals(_process, sender)) return;
             _process = null;
             _sessionUrl = null;
+            _consoleHwnd = IntPtr.Zero;
+            _consoleWantedVisible = false;
+            _lastConsoleSnapshot = "";
         }
 
         var code = -1;
@@ -283,7 +340,7 @@ public sealed class DshProcessManager : IDisposable
     }
 
     /// <summary>
-    /// 等自己的子进程把端口打开,并尽量等到 stdout 打出 `dsh web:` URL
+    /// 等自己的子进程把端口打开,并尽量等到控制台打出 `dsh web:` URL
     /// (0.1.2+ 带一次性 token,必须用这条 URL 打开页面)。
     /// 超时仍无 URL 但端口已开 → 按旧版 dsh 处理,回退裸地址。
     /// </summary>
@@ -296,16 +353,86 @@ public sealed class DshProcessManager : IDisposable
             string? session;
             lock (_gate) { p = _process; session = _sessionUrl; }
             if (p is null || p.HasExited) return false;
+            if (session is null)
+                TryCaptureUrlFromConsole();
+            lock (_gate) session = _sessionUrl;
             if (session is not null && PortOpen(Port)) return true;
             await Task.Delay(500);
         }
         return ProcessAlive() && PortOpen(Port);
     }
 
-    private void OnDshLine(string line, bool error)
+    /// <summary>等到控制台 HWND 后按用户意图显示或保持隐藏,并去掉关闭按钮。</summary>
+    private async Task BindConsoleWindowAsync(Process p)
     {
-        if (error) Log.Error($"[dsh] {line}");
-        else Log.Info($"[dsh] {line}");
+        try
+        {
+            var hwnd = await HiddenConsole.WaitForWindowAsync(p.Id, TimeSpan.FromSeconds(5));
+            lock (_gate)
+            {
+                if (!ReferenceEquals(_process, p)) return;
+                if (hwnd == IntPtr.Zero)
+                {
+                    Log.Error("未能绑定 dsh 控制台窗口,托盘「显示 dsh 终端」可能不可用");
+                    return;
+                }
+                _consoleHwnd = hwnd;
+                HiddenConsole.DisableCloseButton(hwnd);
+                if (_consoleWantedVisible) HiddenConsole.Show(hwnd);
+                else HiddenConsole.Hide(hwnd);
+            }
+            Log.Info($"dsh 控制台已绑定 HWND=0x{hwnd.ToInt64():X}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"绑定 dsh 控制台失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 从隐藏控制台屏幕缓冲抓新输出:记日志,并解析 `dsh web:` launch-token。
+    /// 与管道重定向互斥(真实终端要自己画输出),只在等待就绪期间轮询。
+    /// </summary>
+    private void TryCaptureUrlFromConsole()
+    {
+        int pid;
+        lock (_gate) pid = _process?.Id ?? 0;
+        if (pid == 0) return;
+        string? snapshot;
+        try { snapshot = HiddenConsole.ReadSnapshot(pid); }
+        catch { return; }
+        if (string.IsNullOrEmpty(snapshot) || snapshot == _lastConsoleSnapshot)
+            return;
+
+        var common = 0;
+        var max = Math.Min(_lastConsoleSnapshot.Length, snapshot!.Length);
+        while (common < max && _lastConsoleSnapshot[common] == snapshot[common])
+            common++;
+        var delta = snapshot.Substring(common);
+        _lastConsoleSnapshot = snapshot;
+        foreach (var raw in delta.Split('\n'))
+        {
+            var line = raw.TrimEnd();
+            if (line.Length == 0) continue;
+            OnDshLine(line);
+        }
+        // 控制台按缓冲宽度折行时,token URL 可能被拆成两行;整段再扫一次
+        bool haveUrl;
+        lock (_gate) haveUrl = _sessionUrl is not null;
+        if (haveUrl) return;
+        var url = ShellLogic.ParseDshWebUrl(snapshot.Replace("\n", ""));
+        if (url is null) return;
+        lock (_gate)
+        {
+            if (_sessionUrl is not null) return;
+            _sessionUrl = url;
+        }
+        Log.Info($"捕获 dsh web URL: {url}");
+    }
+
+    private void OnDshLine(string line)
+    {
+        Log.Info($"[dsh] {line}");
 
         var url = ShellLogic.ParseDshWebUrl(line);
         if (url is null) return;
@@ -315,6 +442,17 @@ public sealed class DshProcessManager : IDisposable
             _sessionUrl = url;
         }
         Log.Info($"捕获 dsh web URL: {url}");
+    }
+
+    /// <summary>
+    /// cmd.exe 参数:隐藏控制台内先切 UTF-8 代码页,再跑 dsh/npx。
+    /// /c 吃掉开关后整行,`&` 作为 cmd 命令分隔,无需再包一层引号。
+    /// </summary>
+    internal static string BuildConsoleArguments(LaunchPlan plan)
+    {
+        var cmdArgs = new List<string> { plan.Command };
+        cmdArgs.AddRange(plan.Args);
+        return "/d /c chcp 65001>nul & " + QuoteWin32Args(cmdArgs);
     }
 
     private async Task WaitPortClosedAsync(TimeSpan timeout) =>
@@ -344,6 +482,9 @@ public sealed class DshProcessManager : IDisposable
             p = _process;
             _process = null;
             _sessionUrl = null;
+            _consoleHwnd = IntPtr.Zero;
+            _consoleWantedVisible = false;
+            _lastConsoleSnapshot = "";
             job = _job;
         }
         if (p is not null)
