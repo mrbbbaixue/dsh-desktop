@@ -19,7 +19,7 @@ internal static class SharedEnvironment
         {
             var options = new CoreWebView2EnvironmentOptions
             {
-                AdditionalBrowserArguments = string.Join(' ',
+                AdditionalBrowserArguments = string.Join(" ",
                     "--autoplay-policy=no-user-gesture-required",
                     "--proxy-bypass-list=" + ProxyBypassList()),
             };

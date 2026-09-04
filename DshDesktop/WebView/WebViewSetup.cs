@@ -96,8 +96,8 @@ internal static class WebViewSetup
             if (e.ProcessFailedKind is CoreWebView2ProcessFailedKind.RenderProcessExited
                 or CoreWebView2ProcessFailedKind.RenderProcessUnresponsive)
             {
-                var now = Environment.TickCount64;
-                if (now - Interlocked.Read(ref _lastReloadTick) > 10_000)
+                var now = DateTime.UtcNow.Ticks;
+                if (now - Interlocked.Read(ref _lastReloadTick) > 10_000 * TimeSpan.TicksPerMillisecond)
                 {
                     Interlocked.Exchange(ref _lastReloadTick, now);
                     try { core.Reload(); } catch { }

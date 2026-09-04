@@ -1,7 +1,9 @@
 # ---- .NET ----
 bin/
 obj/
-# 发布产物统一输出到 dist/;其他 dist 变体目录一并忽略
+# 发布产物统一输出到 build/;dist 为旧目录名,防残留提交
+build/
+build-*/
 dist/
 dist-*/
 *.user

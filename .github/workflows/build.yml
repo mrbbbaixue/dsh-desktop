@@ -6,6 +6,7 @@ on:
     tags: [ 'v*' ]
   pull_request:
 
+# 用 .NET SDK 10 编译;应用目标是 net48(Windows 11 自带)。产物在 build/。
 jobs:
   test:
     runs-on: windows-latest
@@ -33,24 +34,19 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Publish framework-dependent
+      - name: Publish
         shell: pwsh
         run: |
           $tag = if ($env:GITHUB_REF.StartsWith('refs/tags/')) { $env:GITHUB_REF_NAME } else { '' }
           if ($tag) { ./Scripts/build.ps1 -Tag $tag } else { ./Scripts/build.ps1 }
-
-      - name: Publish self-contained
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
-        run: ./Scripts/build.ps1 -SelfContained -Tag "${{ github.ref_name }}"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v5
         with:
           name: dsh-desktop-win-x64
           path: |
-            dist/*.zip
-            dist/SHA256SUMS.txt
+            build/*.zip
+            build/SHA256SUMS.txt
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -58,7 +54,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
-          $assets = @(Get-ChildItem dist -File |
+          $assets = @(Get-ChildItem build -File |
             Where-Object { $_.Name -like '*.zip' -or $_.Name -eq 'SHA256SUMS.txt' } |
             ForEach-Object FullName)
           gh release create "${{ github.ref_name }}" @assets --generate-notes --title "${{ github.ref_name }}"

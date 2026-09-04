@@ -117,24 +117,22 @@ public sealed class DshProcessManager : IDisposable
 
             KillOwnProcess();
             var plan = _buildLaunchPlan!(Port);
+            var cmdArgs = new List<string> { plan.Command };
+            cmdArgs.AddRange(plan.Args);
             var psi = new ProcessStartInfo
             {
                 FileName = "cmd.exe",
+                // /d 跳过 AutoRun,/c 后跟可执行文件与参数(.NET Framework 无 ArgumentList)
+                Arguments = "/d /c " + QuoteWin32Args(cmdArgs),
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
-            // ArgumentList 由系统完成引号/转义; /d 跳过 AutoRun,/c 后跟可执行文件与参数
-            psi.ArgumentList.Add("/d");
-            psi.ArgumentList.Add("/c");
-            psi.ArgumentList.Add(plan.Command);
-            foreach (var arg in plan.Args)
-                psi.ArgumentList.Add(arg);
-            foreach (var (k, v) in plan.Environment)
-                psi.Environment[k] = v;
-            Log.Info($"拉起 dsh: {plan.Command} {string.Join(' ', plan.Args)}");
+            foreach (var kv in plan.Environment)
+                psi.Environment[kv.Key] = kv.Value;
+            Log.Info($"拉起 dsh: {plan.Command} {string.Join(" ", plan.Args)}");
 
             var p = Process.Start(psi);
             if (p is null)
@@ -334,7 +332,7 @@ public sealed class DshProcessManager : IDisposable
     }
 
     /// <summary>
-    /// 只结束本管理器拉起的进程:先杀记录的子进程树,再 TerminateJobObject
+    /// 只结束本管理器拉起的进程:先杀记录的 cmd 子进程,再 TerminateJobObject
     /// 清掉仍留在 job 里的后代(cmd 提前退出时 node 不会变成"别人的进程")。
     /// </summary>
     private void KillOwnProcess()
@@ -355,7 +353,21 @@ public sealed class DshProcessManager : IDisposable
                 if (!p.HasExited)
                 {
                     Log.Info($"结束自己的 dsh 子进程树 PID={p.Id}");
-                    p.Kill(entireProcessTree: true);
+                    // .NET Framework 没有 Kill(entireProcessTree);taskkill /T 杀进程树,失败再 Kill 自身
+                    try
+                    {
+                        using var killer = Process.Start(new ProcessStartInfo(
+                            "taskkill.exe", $"/PID {p.Id} /T /F")
+                        {
+                            UseShellExecute = false,
+                            CreateNoWindow = true,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true,
+                        });
+                        killer?.WaitForExit(5000);
+                    }
+                    catch { /* ignore */ }
+                    try { if (!p.HasExited) p.Kill(); } catch { }
                 }
                 p.WaitForExit(5000);
             }
@@ -364,6 +376,17 @@ public sealed class DshProcessManager : IDisposable
         }
         if (job != IntPtr.Zero)
             TerminateJobObject(job, 1);
+    }
+
+    /// <summary>按 Win32 argv 规则拼接参数(.NET Framework 没有 ProcessStartInfo.ArgumentList)。</summary>
+    private static string QuoteWin32Args(IEnumerable<string> args) =>
+        string.Join(" ", args.Select(QuoteWin32Arg));
+
+    private static string QuoteWin32Arg(string arg)
+    {
+        if (arg.Length != 0 && arg.IndexOfAny([' ', '\t', '"']) < 0)
+            return arg;
+        return "\"" + arg.Replace("\"", "\\\"") + "\"";
     }
 
     /// <summary>

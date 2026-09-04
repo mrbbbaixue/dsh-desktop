@@ -1,13 +1,10 @@
 # 本地发布:
 #   ./Scripts/build.ps1
-#   ./Scripts/build.ps1 -SelfContained
 # CI 发布(GitHub Actions):
-#   ./Scripts/build.ps1 [-Tag v1.2.0] [-SelfContained]
+#   ./Scripts/build.ps1 [-Tag v1.2.0]
 param(
-    # 全自包含发布:内置 .NET 运行时,单个 exe 无需安装 .NET Desktop Runtime(体积 ~100MB+)
-    [switch]$SelfContained,
     [string]$Runtime = "win-x64",
-    [string]$OutputDir = "dist",
+    [string]$OutputDir = "build",
     # CI 打 tag 时可显式传入(如 v1.1.0);空则 git describe
     [string]$Tag = ""
 )
@@ -30,8 +27,7 @@ if (-not [string]::IsNullOrWhiteSpace($Tag)) {
     $version = $version.TrimStart('v')
 }
 
-$suffix = if ($SelfContained) { "self-contained" } else { "framework-dependent" }
-Write-Host "发布 DshDesktop $version ($Runtime, $suffix)..." -ForegroundColor Cyan
+Write-Host "发布 DshDesktop $version ($Runtime, net48)..." -ForegroundColor Cyan
 
 $publishDir = Join-Path $root "$OutputDir/publish"
 $publishArgs = @(
@@ -40,23 +36,20 @@ $publishArgs = @(
     "-r", $Runtime,
     "-o", $publishDir
 )
-if ($SelfContained) { $publishArgs += "--self-contained" }
-else { $publishArgs += "--self-contained", "false" }
 
 dotnet publish @publishArgs
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish 失败" }
 
-# 打 zip(单文件发布产物只有 DshDesktop.exe;含自解压依赖时仍然只有 exe)
-$zipName = "dsh-desktop-$version-$Runtime-$suffix.zip"
+$zipName = "dsh-desktop-$version-$Runtime.zip"
 $zipPath = Join-Path $root "$OutputDir/$zipName"
 Compress-Archive -Path "$publishDir/*" -DestinationPath $zipPath -Force
 
-# SHA256:按 dist 里现有 zip 重写(多次调用 FD/SC 不会互相覆盖)
-$distDir = Join-Path $root $OutputDir
-$lines = Get-ChildItem $distDir -File -Filter "dsh-desktop-*.zip" | Sort-Object Name | ForEach-Object {
+# SHA256:按 build 里现有 zip 重写
+$outDir = Join-Path $root $OutputDir
+$lines = Get-ChildItem $outDir -File -Filter "dsh-desktop-*.zip" | Sort-Object Name | ForEach-Object {
     $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
     "$hash  $($_.Name)"
 }
-Set-Content -Path (Join-Path $distDir "SHA256SUMS.txt") -Value $lines -Encoding ascii
+Set-Content -Path (Join-Path $outDir "SHA256SUMS.txt") -Value $lines -Encoding ascii
 
 Write-Host "完成: $OutputDir/$zipName" -ForegroundColor Green

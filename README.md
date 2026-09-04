@@ -3,7 +3,7 @@
 [![build](https://github.com/mrbbbaixue/dsh-desktop/actions/workflows/build.yml/badge.svg)](https://github.com/mrbbbaixue/dsh-desktop/actions/workflows/build.yml)
 [![license](https://img.shields.io/github/license/mrbbbaixue/dsh-desktop)](LICENSE)
 
-> DeepSeek Harness 的 Windows 桌面启动器:.NET 10 WPF + WebView2,独立进程托管 dsh 服务,托盘管理,原生标题栏深浅色跟随系统。
+> DeepSeek Harness 的 Windows 桌面启动器:.NET Framework 4.8 WPF + WebView2,独立进程托管 dsh 服务,托盘管理,原生标题栏深浅色跟随系统。原版 Windows 11 即可启动,无需另装 .NET。
 
 ## 特性
 
@@ -18,7 +18,7 @@
 
 ## 安装 / 运行
 
-需要 [.NET Desktop Runtime 10](https://dotnet.microsoft.com/download/dotnet/10.0)(`winget install Microsoft.DotNet.DesktopRuntime.10`)与 WebView2 Runtime(Windows 10/11 自带)。
+需要 **.NET Framework 4.8**(Windows 11 21H2 自带;22H2+ 为 4.8.1)与 WebView2 Runtime(Windows 10/11 自带)。原版 Windows 11 无需另装运行时。
 
 > dsh 不必全局安装:启动器优先用 PATH 中的 `dsh`,否则自动回退 `npx -y @deepseek-ai/dsh`。
 
@@ -35,15 +35,13 @@ DshDesktop.exe
 git clone https://github.com/mrbbbaixue/dsh-desktop.git
 cd dsh-desktop
 dotnet test                        # 单元测试(ShellLogic 策略)
-./Scripts/build.ps1                # 打包:zip + SHA256(框架依赖单文件,约 2.3MB)
-./Scripts/build.ps1 -SelfContained # 自包含单文件(内置 .NET 运行时,约 175MB,免装运行时)
+./Scripts/build.ps1                # 打包:zip + SHA256(约数 MB,依赖系统自带的 .NET Framework 4.8)
 ```
 
-单文件发布配置已固化在 `DshDesktop.csproj`(WebView2Loader.dll 与托管依赖一并嵌入,发布目录只有一个 exe)。产物在 `dist\`:
-- `dsh-desktop-<版本>-win-x64-framework-dependent.zip` — 默认,需 .NET Desktop Runtime 10
-- `dsh-desktop-<版本>-win-x64-self-contained.zip` — 免装运行时,仅需 WebView2 Runtime(Windows 10/11 自带)
+产物在 `build\`:
+- `dsh-desktop-<版本>-win-x64.zip` — 依赖 Windows 自带的 .NET Framework 4.8 / 4.8.1,原版 Windows 11 可直接运行。解压后请整目录保留(exe 旁有 WebView2 依赖 DLL),双击 `DshDesktop.exe`。
 
-推送 `vX.Y.Z` 标签会走 GitHub Actions:测试 → 打两种 zip → 创建 [GitHub Release](https://github.com/mrbbbaixue/dsh-desktop/releases)。`main` / PR 也会上传框架依赖产物到 workflow artifacts。
+推送 `vX.Y.Z` 标签会走 GitHub Actions:测试 → 打包 zip → 创建 [GitHub Release](https://github.com/mrbbbaixue/dsh-desktop/releases)。`main` / PR 也会上传产物到 workflow artifacts。编译需要 [.NET SDK](https://dotnet.microsoft.com/download)(10.x 即可)。
 
 ```powershell
 git tag v1.1.0
@@ -55,8 +53,8 @@ git push origin v1.1.0
 **Q:双击没反应?**
 查看日志 `%USERPROFILE%\.dsh-desktop.log`,确认 Node.js 已安装。
 
-**Q:提示缺少 .NET Desktop Runtime?**
-执行 `winget install Microsoft.DotNet.DesktopRuntime.10` 后重试。
+**Q:提示缺少 .NET Framework 4.8?**
+Windows 11 自带 4.8/4.8.1,一般不会出现。若在精简系统或极旧 Windows 10 上,请安装 [.NET Framework 4.8](https://dotnet.microsoft.com/download/dotnet-framework/net48) 后重试。
 
 **Q:窗口一直显示"正在启动 dsh 服务…"?**
 等待页下方有一行环境检测(如 `Node.js 已安装 (v22.14.0) · npm 已安装 · dsh 未安装(将自动用 npx 启动)`)。若显示 `Node.js 未安装`,请先安装 Node.js 后从托盘菜单重试。服务 90 秒内未就绪(常见于 npx 首次下载慢)时,壳会在后台继续等待,下载完成会自动加载页面;也可设置 `DSH_NPM_REGISTRY` 镜像后,托盘菜单「重启 dsh 服务」。
@@ -86,7 +84,7 @@ git push origin v1.1.0
 
 ## English
 
-> A Windows desktop launcher for DeepSeek Harness: .NET 10 WPF + WebView2, dsh hosted in a managed child process with a system-tray controller, and the native title bar follows the system dark/light theme.
+> A Windows desktop launcher for DeepSeek Harness: .NET Framework 4.8 WPF + WebView2, dsh hosted in a managed child process with a system-tray controller, and the native title bar follows the system dark/light theme. Runs on a stock Windows 11 install with no extra .NET runtime.
 
 ### Features
 
@@ -100,7 +98,23 @@ git push origin v1.1.0
 
 ### Requirements
 
-[.NET Desktop Runtime 10](https://dotnet.microsoft.com/download/dotnet/10.0) and WebView2 Runtime (built into Windows 10/11). Node.js 18+ is required for the dsh service. A global dsh install is optional — the launcher falls back to `npx -y @deepseek-ai/dsh` automatically; set `DSH_NPM_REGISTRY` (e.g. `https://registry.npmmirror.com`) to use a faster npm registry.
+[.NET Framework 4.8](https://dotnet.microsoft.com/download/dotnet-framework/net48) (inbox on Windows 11: 4.8 on 21H2, 4.8.1 from 22H2) and WebView2 Runtime (built into Windows 10/11). Node.js 18+ is required for the dsh service. A global dsh install is optional — the launcher falls back to `npx -y @deepseek-ai/dsh` automatically; set `DSH_NPM_REGISTRY` (e.g. `https://registry.npmmirror.com`) to use a faster npm registry.
+
+### Build from source
+
+Building requires a [.NET SDK](https://dotnet.microsoft.com/download) (10.x is fine). The app itself targets .NET Framework 4.8.
+
+```powershell
+git clone https://github.com/mrbbbaixue/dsh-desktop.git
+cd dsh-desktop
+dotnet test
+./Scripts/build.ps1
+```
+
+Artifacts land in `build\`:
+- `dsh-desktop-<version>-win-x64.zip` — unzip and keep the folder together (WebView2 DLLs sit next to the exe), then run `DshDesktop.exe`
+
+Pushing a `vX.Y.Z` tag runs GitHub Actions: test → zip → [GitHub Release](https://github.com/mrbbbaixue/dsh-desktop/releases). `main` / PRs also upload the zip as a workflow artifact.
 
 ### Disclaimer & License
 

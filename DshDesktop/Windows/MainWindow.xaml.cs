@@ -10,7 +10,7 @@ namespace DshDesktop.Windows;
 
 /// <summary>
 /// 主窗口:WebView2 填充 + 系统原生标题栏(深浅色跟随系统)。
-/// 关窗/最小化只隐藏,WebView 继续在后台跑;同一实例贯穿整个进程。
+/// 关窗只隐藏到托盘,WebView 继续在后台跑;同一实例贯穿整个进程。最小化走系统默认。
 /// 仅首次就绪或 dsh 换了启动 URL(重启后新的 launch-token)才导航。
 /// </summary>
 public partial class MainWindow : Window
@@ -61,7 +61,7 @@ public partial class MainWindow : Window
         return IntPtr.Zero;
     }
 
-    /// <summary>关窗/最小化:隐藏到托盘,不销毁、不切最小化态,WebView 继续渲染。</summary>
+    /// <summary>关窗:隐藏到托盘,不销毁,WebView 继续渲染。</summary>
     public void HideToBackground()
     {
         if (WindowState == WindowState.Minimized)

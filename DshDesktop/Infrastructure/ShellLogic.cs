@@ -118,12 +118,12 @@ public static class ShellLogic
         }
         name = string.IsNullOrWhiteSpace(name)
             ? $"dsh-{DateTime.Now:yyyyMMddHHmmss}"
-            : Uri.UnescapeDataString(name);
+            : Uri.UnescapeDataString(name!);
 
         // blob: 等无扩展名下载:按 MIME 类型补一个扩展名,便于识别
         if (!Path.HasExtension(name) && !string.IsNullOrWhiteSpace(mimeType))
         {
-            var mime = mimeType.Split(';')[0].Trim();
+            var mime = mimeType!.Split(';')[0].Trim();
             if (MimeExtensions.TryGetValue(mime, out var ext))
                 name += ext;
         }
@@ -151,7 +151,7 @@ public static class ShellLogic
     /// 返回 null 表示未设置(沿用本机 npm 配置);否则注入 npm_config_registry。
     /// </summary>
     internal static string? ResolveNpmRegistry(string? envValue) =>
-        string.IsNullOrWhiteSpace(envValue) ? null : envValue.Trim();
+        string.IsNullOrWhiteSpace(envValue) ? null : envValue!.Trim();
 
     // ---- 运行环境探测:Node.js / npm / dsh 是否可用(启动时给用户一行明确提示) ----
 
