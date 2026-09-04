@@ -1,7 +1,7 @@
 using System.IO;
 using Microsoft.Win32;
 
-namespace DshDesktop;
+namespace DshDesktop.Services;
 
 /// <summary>
 /// 开机自启:当前用户 HKCU Run 键,写入 "exe路径 --minimized"(登录后静默启动,不弹窗口)。

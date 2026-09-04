@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace DshDesktop;
+namespace DshDesktop.Infrastructure;
 
 /// <summary>
 /// 单实例控制:按目标端口隔离的互斥锁;

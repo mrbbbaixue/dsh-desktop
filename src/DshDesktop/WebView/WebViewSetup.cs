@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using Microsoft.Web.WebView2.Core;
 
-namespace DshDesktop;
+namespace DshDesktop.WebView;
 
 /// <summary>
 /// 统一的 WebView2 接线:设置 + 权限 + 下载 + 弹窗 + 崩溃自愈。

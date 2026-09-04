@@ -9,7 +9,7 @@
 
 - 🪟 **WPF + WebView2,HiDPI** — PerMonitorV2 感知,多显示器不同缩放比例下自动适配;窗口约 50–150MB,关窗即释放
 - 🔌 **本地直连,绕过系统代理** — WebView2 访问 127.0.0.1 / DSH 地址默认直连,不被公司代理、Clash 等系统代理拦截
-- ⚙️ **独立进程托管 dsh** — dsh 服务由壳用独立进程拉起(经 cmd 执行的子进程),不依赖 vbs 等脚本;启动参数显式使用解析端口,与页面访问地址同源;意外退出自动重启(节流防循环)
+- ⚙️ **独立子进程托管 dsh** — 壳自己拉起、自己停止,只管理这一棵进程树;不接管、不误杀端口上其它进程;启动参数与页面访问地址同源;意外退出自动重启(节流防循环)
 - 🖥️ **系统托盘** — 右键托盘菜单可随时 **启动 / 重启 / 停止** dsh 服务;关窗隐藏到托盘,服务常驻
 - 🎨 **原生标题栏深浅色** — 自动跟随 Windows 深浅色主题,无需手动切换
 - 🚀 **开机自启** — 托盘菜单一键开启(仅当前用户,`--minimized` 静默启动不弹窗)
@@ -55,8 +55,8 @@ dotnet test                        # 单元测试(ShellLogic 策略)
 **Q:窗口一直显示"正在启动 dsh 服务…"?**
 等待页下方有一行环境检测(如 `Node.js 已安装 (v22.14.0) · npm 已安装 · dsh 未安装(将自动用 npx 启动)`)。若显示 `Node.js 未安装`,请先安装 Node.js 后从托盘菜单重试。服务 90 秒内未就绪(常见于 npx 首次下载慢)时,壳会在后台继续等待,下载完成会自动加载页面;也可设置 `DSH_NPM_REGISTRY` 镜像后,托盘菜单「重启 dsh 服务」。
 
-**Q:网页里"选择目录"报 `directory picker failed: spawn C:\Program Files\nodejs\node.exe ENOENT`?**
-通常是残留的旧 dsh 进程占着 3080 端口(例如升级 Node.js 前的 32 位旧服务,spawn 位数不匹配的新 node.exe 会报 ENOENT)。托盘菜单「重启 dsh 服务」即可:壳会结束占用端口的残留 dsh 进程并重新拉起(仅清理命令行确认是 dsh 的进程,其它占用端口的进程会跳过并记入日志,避免误杀)。确认 Node.js 已安装后重试。
+**Q:网页里"选择目录"报 `directory picker failed: spawn C:\Program Files\nodejs\node.exe ENOENT`,或日志写"端口已被占用"?**
+3080 端口被其它程序(或以前残留的 dsh)占用时,壳不会接管、也不会去杀那个进程。请先手动结束占用端口的程序,再从托盘菜单「启动 / 重启 dsh 服务」。确认 Node.js 已安装后重试。
 
 ## 环境变量
 
@@ -82,7 +82,8 @@ dotnet test                        # 单元测试(ShellLogic 策略)
 ### Features
 
 - 🪟 **WPF + WebView2, HiDPI** — PerMonitorV2-aware, adapts across monitors with mixed scaling; window ~50–150MB, freed on close
-- ⚙️ **Managed child process** — dsh runs as an independent process (no VBS or other script files); auto-restarts on unexpected exit (throttled)
+- 🔌 **Loopback bypasses the system proxy** — WebView2 talks to 127.0.0.1 / DSH directly, not through corporate proxies or Clash
+- ⚙️ **Managed child process** — the shell starts and stops its own dsh child tree only (no VBS); it will not adopt or kill other processes on the port; launch args share the window's resolved port; auto-restarts on unexpected exit (throttled)
 - 🖥️ **System tray** — right-click to **start / restart / stop** the dsh service; closing the window hides to tray, the service keeps running
 - 🎨 **Native title bar theme** — automatically follows the Windows dark/light mode
 - 🚀 **Autostart** — one click in the tray menu (current user only, `--minimized` starts silently)

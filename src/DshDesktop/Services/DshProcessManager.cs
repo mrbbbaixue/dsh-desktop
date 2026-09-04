@@ -2,13 +2,14 @@ using System.Diagnostics;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 
-namespace DshDesktop;
+namespace DshDesktop.Services;
 
 /// <summary>
-/// dsh 服务进程管理器:用独立进程拉起 dsh,并跟踪其生命周期。
+/// dsh 服务进程管理器:用本进程的子进程拉起 dsh,并独自跟踪其生命周期。
 /// - 优先 PATH 中的 `dsh`,回退 `npx -y @deepseek-ai/dsh`(可用 DSH_NPM_REGISTRY 指定 npm 镜像)
 /// - 全程静默(无控制台窗口、无 vbs 等脚本文件),输出重定向到日志
-/// - 意外退出自动重启(节流 + 失败上限);停止/退出只杀自己拉起的进程
+/// - 只杀自己拉起的子进程树,不接管、不清理端口上已有的其它进程
+/// - 意外退出自动重启(节流 + 失败上限);壳退出(含强杀)时由 Job Object 连带终止子进程
 /// - 设置 DSH_WEB_URL 时视为外部托管服务,不拉起也不停止
 /// </summary>
 public sealed class DshProcessManager : IDisposable
@@ -73,8 +74,8 @@ public sealed class DshProcessManager : IDisposable
     }
 
     /// <summary>
-    /// 确保服务运行:端口已开 → 直接就绪;未开 → 拉起并等待就绪(最长 90s)。
-    /// 并发调用幂等(Starting/Running 时直接返回)。
+    /// 确保服务运行:拉起自己的子进程并等待就绪(最长 90s)。
+    /// 不接管端口上已有的其它进程。并发调用幂等(Starting/Running 时直接返回)。
     /// </summary>
     public async Task EnsureRunningAsync()
     {
@@ -96,14 +97,15 @@ public sealed class DshProcessManager : IDisposable
     {
         try
         {
+            // 端口已被占用 → 无法把我们的子进程绑上去,也不接管他人进程。
             if (PortOpen(Port))
             {
-                _consecutiveFailures = 0;
-                SetState(ServiceState.Running);
+                Log.Error($"端口 {Port} 已被占用,不会接管已有进程。请先结束占用该端口的程序,或设置 DSH_WEB_URL 指向外部服务。");
+                SetState(ServiceState.Failed);
                 return;
             }
 
-            KillOwnProcess(); // 清理可能残留的旧进程
+            KillOwnProcess();
             var plan = _buildLaunchPlan!(Port);
             var psi = new ProcessStartInfo
             {
@@ -114,7 +116,8 @@ public sealed class DshProcessManager : IDisposable
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
-            // 用 ArgumentList 传参,由系统完成正确的引号/转义,端口与路径含空格也安全
+            // ArgumentList 由系统完成引号/转义; /d 跳过 AutoRun,/c 后跟可执行文件与参数
+            psi.ArgumentList.Add("/d");
             psi.ArgumentList.Add("/c");
             psi.ArgumentList.Add(plan.Command);
             foreach (var arg in plan.Args)
@@ -127,8 +130,9 @@ public sealed class DshProcessManager : IDisposable
             if (p is null)
                 throw new InvalidOperationException("Process.Start 返回 null");
 
-            AssignToJob(p); // 壳退出(含强杀)时由系统连带终止 dsh,防残留
+            AssignToJob(p);
             lock (_gate) _process = p;
+            Log.Info($"dsh 子进程已启动 PID={p.Id}");
             p.EnableRaisingEvents = true;
             p.OutputDataReceived += (_, e) => { if (e.Data is not null) Log.Info($"[dsh] {e.Data}"); };
             p.ErrorDataReceived += (_, e) => { if (e.Data is not null) Log.Error($"[dsh] {e.Data}"); };
@@ -136,24 +140,24 @@ public sealed class DshProcessManager : IDisposable
             p.BeginErrorReadLine();
             p.Exited += OnProcessExited;
 
-            var ready = await WaitReadyAsync(TimeSpan.FromSeconds(90));
+            var ready = await WaitOwnReadyAsync(TimeSpan.FromSeconds(90));
             if (ready)
             {
                 _consecutiveFailures = 0;
                 SetState(ServiceState.Running);
             }
+            else if (ProcessAlive())
+            {
+                // 子进程还活着(常见于 npx 首次下载):保持 Starting,后台继续等,窗口的 WaitReady 仍能成功
+                Log.Error("dsh 90 秒内未就绪。若为 npx 首次下载过慢,可设置 DSH_NPM_REGISTRY 指定 npm 镜像;详情见 %USERPROFILE%\\.dsh-desktop.log");
+                Log.Info("dsh 子进程仍在运行,转入后台等待就绪…");
+                _ = WaitForReadyInBackgroundAsync();
+            }
             else
             {
                 _consecutiveFailures++;
                 SetState(ServiceState.Failed);
-                Log.Error("dsh 90 秒内未就绪。若为 npx 首次下载过慢,可设置 DSH_NPM_REGISTRY 指定 npm 镜像;详情见 %USERPROFILE%\\.dsh-desktop.log");
-                // 进程还活着(如 npx 仍在下载/安装):不要就此放弃,
-                // 后台继续等端口就绪,一旦起来自动转 Running,窗口随即自动加载。
-                if (ProcessAlive())
-                {
-                    Log.Info("dsh 进程仍在运行,转入后台等待就绪…");
-                    _ = WaitForReadyInBackgroundAsync();
-                }
+                Log.Error("dsh 90 秒内未就绪且子进程已退出。详情见 %USERPROFILE%\\.dsh-desktop.log");
             }
         }
         catch (Exception ex)
@@ -164,17 +168,20 @@ public sealed class DshProcessManager : IDisposable
         }
     }
 
-    /// <summary>进程意外退出(非主动停止)→ 自动重启,10s 节流,连续失败 5 次后停止。</summary>
+    /// <summary>当前子进程意外退出(非主动停止)→ 自动重启,10s 节流,连续失败 5 次后停止。</summary>
     private void OnProcessExited(object? sender, EventArgs e)
     {
         lock (_gate)
         {
-            if (State is ServiceState.Stopping or ServiceState.Stopped || _disposed) return;
+            if (_disposed || State is ServiceState.Stopping or ServiceState.Stopped) return;
+            // 只响应当前子进程;KillOwnProcess 之后的过期 Exited 一律忽略
+            if (!ReferenceEquals(_process, sender)) return;
+            _process = null;
         }
 
         var code = -1;
         try { if (sender is Process p) code = p.ExitCode; } catch { }
-        Log.Error($"dsh 进程意外退出 (exit={code}),自动重启");
+        Log.Error($"dsh 子进程意外退出 (exit={code}),自动重启");
 
         var now = DateTime.UtcNow;
         lock (_gate)
@@ -190,22 +197,27 @@ public sealed class DshProcessManager : IDisposable
         _ = Task.Run(EnsureRunningAsync);
     }
 
-    /// <summary>90 秒未就绪但进程仍存活时(如 npx 首次下载慢):后台继续等端口,
-    /// 一旦就绪自动转 Running,窗口经 StateChanged 事件随即自动加载,不再卡死在失败态。</summary>
+    /// <summary>90 秒未就绪但子进程仍存活时(如 npx 首次下载慢):后台继续等端口,
+    /// 一旦就绪自动转 Running,窗口经 StateChanged 事件随即自动加载。</summary>
     private async Task WaitForReadyInBackgroundAsync()
     {
-        var ok = await WaitReadyAsync(TimeSpan.FromMinutes(10));
-        if (!ok) return;
+        var ok = await WaitOwnReadyAsync(TimeSpan.FromMinutes(10));
         lock (_gate)
         {
             if (_disposed || State is ServiceState.Stopping or ServiceState.Stopped) return;
-            _consecutiveFailures = 0;
         }
+        if (!ok)
+        {
+            _consecutiveFailures++;
+            SetState(ServiceState.Failed);
+            Log.Error("后台等待就绪超时,dsh 服务未能启动");
+            return;
+        }
+        _consecutiveFailures = 0;
         Log.Info("后台等待就绪成功,dsh 服务已运行");
         SetState(ServiceState.Running);
     }
 
-    /// <summary>自己拉起的进程是否还活着(锁内读取,避免与停止/释放竞争)。</summary>
     private bool ProcessAlive()
     {
         lock (_gate)
@@ -215,7 +227,7 @@ public sealed class DshProcessManager : IDisposable
         }
     }
 
-    /// <summary>停止自己拉起的 dsh 进程(外部托管进程不碰)。</summary>
+    /// <summary>停止自己拉起的 dsh 子进程。不碰端口上其它进程。</summary>
     public async Task StopAsync()
     {
         if (_externalManaged) return;
@@ -224,27 +236,8 @@ public sealed class DshProcessManager : IDisposable
             if (State is ServiceState.Stopped or ServiceState.Stopping || _disposed) return;
             SetState(ServiceState.Stopping);
         }
-        Log.Info("停止 dsh 服务");
+        Log.Info("停止 dsh 服务(只结束自己的子进程)");
         KillOwnProcess();
-        // 端口可能被残留的旧 dsh 进程占用(非本壳拉起的,例如升级 Node.js 前的
-        // 32 位旧服务仍占着 3080)。这类进程 spawn 新 node.exe 会报 ENOENT(位数不匹配),
-        // 一并结束,保证"停止/重启"真正生效。
-        // 但只清理"命令行确认是 dsh 服务"的占用者;特征不符的(如用户其它 node
-        // 服务恰好占用同一端口)一律跳过并提示,避免误杀无关进程。
-        if (FindPortPid(Port) is int owner)
-        {
-            var commandLine = GetProcessCommandLine(owner);
-            if (ShellLogic.IsDshCommandLine(commandLine, Port))
-            {
-                Log.Info($"端口 {Port} 仍被 PID {owner} 占用(残留 dsh 服务),结束该进程");
-                KillPidTree(owner);
-            }
-            else
-            {
-                Log.Info($"端口 {Port} 被 PID {owner} 占用,但命令行不含 dsh 特征,已跳过以免误杀其它进程" +
-                    $"(命令行: {commandLine ?? "无法读取"});如需清理请手动结束该进程");
-            }
-        }
         await WaitPortClosedAsync(TimeSpan.FromSeconds(10));
         lock (_gate)
         {
@@ -260,43 +253,85 @@ public sealed class DshProcessManager : IDisposable
         await EnsureRunningAsync();
     }
 
-    /// <summary>轮询等待端口就绪;启动的进程已退出时提前返回 false。</summary>
+    /// <summary>
+    /// 等待本管理器把服务带到 Running。不把他人占用的端口当成就绪。
+    /// Failed 立即返回 false;Stopped/Starting 继续等(启动可能尚未开始)。
+    /// </summary>
     public async Task<bool> WaitReadyAsync(TimeSpan timeout)
+    {
+        if (_externalManaged)
+            return await WaitPortAsync(timeout, wantOpen: true);
+
+        var sw = Stopwatch.StartNew();
+        while (sw.Elapsed < timeout)
+        {
+            var s = State;
+            if (s == ServiceState.Running) return true;
+            if (s == ServiceState.Failed) return false;
+            await Task.Delay(200);
+        }
+        return State == ServiceState.Running;
+    }
+
+    /// <summary>等自己的子进程把端口打开;子进程已退出则失败。</summary>
+    private async Task<bool> WaitOwnReadyAsync(TimeSpan timeout)
     {
         var sw = Stopwatch.StartNew();
         while (sw.Elapsed < timeout)
         {
             Process? p;
             lock (_gate) p = _process;
-            if (p is not null && p.HasExited) return false;
+            if (p is null || p.HasExited) return false;
             if (PortOpen(Port)) return true;
             await Task.Delay(500);
         }
-        return PortOpen(Port);
+        return ProcessAlive() && PortOpen(Port);
     }
 
-    private async Task WaitPortClosedAsync(TimeSpan timeout)
+    private async Task WaitPortClosedAsync(TimeSpan timeout) =>
+        await WaitPortAsync(timeout, wantOpen: false);
+
+    private async Task<bool> WaitPortAsync(TimeSpan timeout, bool wantOpen)
     {
         var sw = Stopwatch.StartNew();
         while (sw.Elapsed < timeout)
         {
-            if (!PortOpen(Port)) return;
+            if (PortOpen(Port) == wantOpen) return true;
             await Task.Delay(500);
         }
+        return PortOpen(Port) == wantOpen;
     }
 
+    /// <summary>
+    /// 只结束本管理器拉起的进程:先杀记录的子进程树,再 TerminateJobObject
+    /// 清掉仍留在 job 里的后代(cmd 提前退出时 node 不会变成"别人的进程")。
+    /// </summary>
     private void KillOwnProcess()
     {
         Process? p;
-        lock (_gate) { p = _process; _process = null; }
-        if (p is null) return;
-        try
+        IntPtr job;
+        lock (_gate)
         {
-            if (!p.HasExited) p.Kill(entireProcessTree: true); // 连 npx/node 子进程树一起杀
-            p.WaitForExit(5000);
+            p = _process;
+            _process = null;
+            job = _job;
         }
-        catch { /* 进程已退出等情况忽略 */ }
-        try { p.Dispose(); } catch { }
+        if (p is not null)
+        {
+            try
+            {
+                if (!p.HasExited)
+                {
+                    Log.Info($"结束自己的 dsh 子进程树 PID={p.Id}");
+                    p.Kill(entireProcessTree: true);
+                }
+                p.WaitForExit(5000);
+            }
+            catch { /* 进程已退出等情况忽略 */ }
+            try { p.Dispose(); } catch { }
+        }
+        if (job != IntPtr.Zero)
+            TerminateJobObject(job, 1);
     }
 
     /// <summary>
@@ -354,90 +389,12 @@ public sealed class DshProcessManager : IDisposable
         CloseJob();
     }
 
-    // ---- 端口占用进程清理:结束残留的旧 dsh 进程(停止/重启服务时) ----
-
-    /// <summary>用 netstat 查找监听指定端口的进程 PID。</summary>
-    private static int? FindPortPid(int port)
-    {
-        try
-        {
-            using var p = Process.Start(new ProcessStartInfo("netstat.exe", "-ano")
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            });
-            if (p is null) return null;
-            var output = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(3000);
-            var marker = $":{port}";
-            foreach (var line in output.Split('\n'))
-            {
-                if (!line.Contains(marker, StringComparison.OrdinalIgnoreCase)) continue;
-                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                // 行格式: TCP  127.0.0.1:3080  0.0.0.0:0  LISTENING  <pid>
-                if (parts.Length >= 5
-                    && parts[0].StartsWith("TCP", StringComparison.OrdinalIgnoreCase)
-                    && parts[^2].Equals("LISTENING", StringComparison.OrdinalIgnoreCase)
-                    && int.TryParse(parts[^1], out var pid) && pid > 0)
-                    return pid;
-            }
-        }
-        catch { /* 解析失败时降级 */ }
-        return null;
-    }
-
-    /// <summary>结束指定 PID 及其子进程树(taskkill /T /F)。</summary>
-    private static void KillPidTree(int pid)
-    {
-        try
-        {
-            using var p = Process.Start(new ProcessStartInfo("taskkill.exe", $"/PID {pid} /T /F")
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            });
-            p?.WaitForExit(5000);
-        }
-        catch { /* 进程已退出等情况忽略 */ }
-    }
-
-    /// <summary>
-    /// 读取进程命令行(PowerShell + CIM,零新依赖)。仅用于停止时识别占用端口的
-    /// 进程是否为 dsh,避免误杀其它 node 进程;读取失败返回 null(调用方保守处理)。
-    /// </summary>
-    private static string? GetProcessCommandLine(int pid)
-    {
-        try
-        {
-            using var p = Process.Start(new ProcessStartInfo("powershell.exe",
-                $"-NoProfile -NonInteractive -Command \"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine\"")
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            });
-            if (p is null) return null;
-            var output = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(8000);
-            return string.IsNullOrWhiteSpace(output) ? null : output.Trim();
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    // ---- Job Object:壳进程退出(含任务管理器强杀)时,系统自动终止 job 内的 dsh 进程 ----
+    // ---- Job Object:壳进程退出(含任务管理器强杀)时,系统自动终止 job 内的子进程 ----
+    // KILL_ON_JOB_CLOSE 必须走 JobObjectExtendedLimitInformation,否则设置不会生效。
 
     private const int JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
-    private const int JobObjectBasicLimitInformation = 9;
+    private const int JobObjectExtendedLimitInformation = 9;
 
-    /// <summary>把 dsh 进程放入"关闭即杀"的 Job Object;失败时降级(仍可用 Kill(entireProcessTree))。</summary>
     private void AssignToJob(Process p)
     {
         try
@@ -445,21 +402,33 @@ public sealed class DshProcessManager : IDisposable
             if (_job == IntPtr.Zero)
             {
                 _job = CreateJobObject(IntPtr.Zero, null);
-                if (_job == IntPtr.Zero) return;
-                var info = new JOBOBJECT_BASIC_LIMIT_INFORMATION
+                if (_job == IntPtr.Zero)
                 {
-                    LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+                    Log.Error($"CreateJobObject 失败: {Marshal.GetLastWin32Error()}");
+                    return;
+                }
+                var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+                {
+                    BasicLimitInformation = new JOBOBJECT_BASIC_LIMIT_INFORMATION
+                    {
+                        LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+                    },
                 };
-                SetInformationJobObject(_job, JobObjectBasicLimitInformation, ref info,
-                    (uint)Marshal.SizeOf<JOBOBJECT_BASIC_LIMIT_INFORMATION>());
+                if (!SetInformationJobObject(_job, JobObjectExtendedLimitInformation, ref info,
+                        (uint)Marshal.SizeOf<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>()))
+                {
+                    Log.Error($"SetInformationJobObject 失败: {Marshal.GetLastWin32Error()}");
+                    CloseHandle(_job);
+                    _job = IntPtr.Zero;
+                    return;
+                }
             }
-            // 进程刚启动可能有竞态,重试几次
             for (var i = 0; i < 5 && !AssignProcessToJobObject(_job, p.Handle); i++)
                 Thread.Sleep(50);
         }
-        catch
+        catch (Exception ex)
         {
-            // 分配失败降级:正常路径的 Kill(true) 与 Process.Exited 仍然生效
+            Log.Error($"加入 Job Object 失败(停止时仍会杀自己的子进程树): {ex.Message}");
         }
     }
 
@@ -476,24 +445,49 @@ public sealed class DshProcessManager : IDisposable
         public long PerProcessUserTimeLimit;
         public long PerJobUserTimeLimit;
         public uint LimitFlags;
-        public IntPtr MinimumWorkingSetSize;
-        public IntPtr MaximumWorkingSetSize;
+        public UIntPtr MinimumWorkingSetSize;
+        public UIntPtr MaximumWorkingSetSize;
         public uint ActiveProcessLimit;
-        public IntPtr Affinity;
+        public UIntPtr Affinity;
         public uint PriorityClass;
         public uint SchedulingClass;
     }
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IO_COUNTERS
+    {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+    {
+        public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+        public IO_COUNTERS IoInfo;
+        public UIntPtr ProcessMemoryLimit;
+        public UIntPtr JobMemoryLimit;
+        public UIntPtr PeakProcessMemoryUsed;
+        public UIntPtr PeakJobMemoryUsed;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string? lpName);
 
-    [DllImport("kernel32.dll")]
+    [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool SetInformationJobObject(IntPtr hJob, int jobObjectInfoClass,
-        ref JOBOBJECT_BASIC_LIMIT_INFORMATION lpJobObjectInfo, uint cbJobObjectInfoLength);
+        ref JOBOBJECT_EXTENDED_LIMIT_INFORMATION lpJobObjectInfo, uint cbJobObjectInfoLength);
 
-    [DllImport("kernel32.dll")]
+    [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
 
-    [DllImport("kernel32.dll")]
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool TerminateJobObject(IntPtr hJob, uint exitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);
 }

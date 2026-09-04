@@ -3,7 +3,7 @@ using System.Windows;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 
-namespace DshDesktop;
+namespace DshDesktop.Windows;
 
 /// <summary>
 /// 插件内部弹窗用的轻量窗口(与主窗口共享 WebView2 用户数据,保持登录态/会话)。

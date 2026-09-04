@@ -1,9 +1,9 @@
 using Svg.Skia;
 using SkiaSharp;
 
-// 用法: icon-gen <input.svg> <outputDir>
+// 用法: dotnet run --project tools/IconGen -- <input.svg> <outputDir>
 // 渲染 16/24/32/48/64/128/256 PNG,并拼成多尺寸 ICO (Vista+ PNG-in-ICO),
-// 另输出 favicon.png (64x64) 作为嵌入资源。
+// 另输出 favicon.png (64x64) 复制到 src/DshDesktop/Resources/ 作为嵌入资源。
 var svgPath = args[0];
 var outDir = args[1];
 Directory.CreateDirectory(outDir);

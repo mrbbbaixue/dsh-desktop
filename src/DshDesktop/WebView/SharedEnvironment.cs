@@ -1,6 +1,6 @@
 using Microsoft.Web.WebView2.Core;
 
-namespace DshDesktop;
+namespace DshDesktop.WebView;
 
 /// <summary>
 /// 共享 WebView2 环境:主窗口与插件弹窗共用同一用户数据目录与浏览器参数,
@@ -19,7 +19,9 @@ internal static class SharedEnvironment
         {
             var options = new CoreWebView2EnvironmentOptions
             {
-                AdditionalBrowserArguments = string.Join(' ', "--autoplay-policy=no-user-gesture-required", ProxyBypassList()),
+                AdditionalBrowserArguments = string.Join(' ',
+                    "--autoplay-policy=no-user-gesture-required",
+                    "--proxy-bypass-list=" + ProxyBypassList()),
             };
             _instance = await CoreWebView2Environment.CreateAsync(null, userDataFolder, options);
         }

@@ -10,8 +10,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>DshDesktop</AssemblyName>
     <RootNamespace>DshDesktop</RootNamespace>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon>favicon.ico</ApplicationIcon>
+    <ApplicationManifest>Properties\app.manifest</ApplicationManifest>
+    <ApplicationIcon>Resources\favicon.ico</ApplicationIcon>
     <!-- WPF 运行时默认 PerMonitorV2(WPF 自动启用);此处同步 WinForms 部分(托盘)的 DPI 模式 -->
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <!--
@@ -35,7 +35,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="favicon.png" />
+    <EmbeddedResource Include="Resources\favicon.png" />
   </ItemGroup>
 
   <ItemGroup>

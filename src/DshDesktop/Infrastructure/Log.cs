@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace DshDesktop;
+namespace DshDesktop.Infrastructure;
 
 /// <summary>
 /// 简单文件日志:%USERPROFILE%\.dsh-desktop.log。

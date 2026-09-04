@@ -6,7 +6,7 @@ using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 
-namespace DshDesktop;
+namespace DshDesktop.Windows;
 
 /// <summary>
 /// 主窗口:WebView2 填充 + 系统原生标题栏(深浅色跟随系统)。
@@ -95,9 +95,18 @@ public partial class MainWindow : Window
             // 再探测一次(用户可能在等待期间装好了 Node),失败提示按原因区分
             probe = ShellLogic.ProbeRuntime();
             EnvStatusText.Text = ShellLogic.FormatRuntimeSummary(probe);
-            StatusText.Text = probe.NodeFound
-                ? "dsh 服务未能就绪,请查看日志 %USERPROFILE%\\.dsh-desktop.log,或从托盘菜单重试。"
-                : "未检测到 Node.js,无法在后台启动 dsh 服务。请安装 Node.js 后,从托盘菜单「启动 dsh 服务」重试。";
+            if (!probe.NodeFound)
+            {
+                StatusText.Text = "未检测到 Node.js,无法在后台启动 dsh 服务。请安装 Node.js 后,从托盘菜单「启动 dsh 服务」重试。";
+            }
+            else if (DshProcessManager.PortOpen(_manager.Port))
+            {
+                StatusText.Text = $"端口 {_manager.Port} 已被占用,不会接管已有进程。请先结束占用该端口的程序,再从托盘菜单重试。";
+            }
+            else
+            {
+                StatusText.Text = "dsh 服务未能就绪,请查看日志 %USERPROFILE%\\.dsh-desktop.log,或从托盘菜单重试。";
+            }
         }
     }
 

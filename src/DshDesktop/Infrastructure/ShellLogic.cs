@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Web.WebView2.Core;
 
-namespace DshDesktop;
+namespace DshDesktop.Infrastructure;
 
 /// <summary>
 /// 与 UI 无关的纯策略逻辑(目标解析、弹窗分类、文件名推导、权限策略、npm 镜像解析)。
@@ -196,19 +196,8 @@ public static class ShellLogic
     /// 此处集中生成,避免任何一处写死默认端口造成"服务起来了但页面访问不到"的错位。
     /// </summary>
     internal static string[] BuildDshWebArgs(int port) =>
-        new[] { "web", "--host", "127.0.0.1", "--port", port.ToString() };
+        ["web", "--host", "127.0.0.1", "--port", port.ToString()];
 
-    /// <summary>
-    /// 判断进程命令行是否属于 dsh web 服务(供停止/重启时识别"残留 dsh"用)。
-    /// 只有命令行同时含 dsh 与目标端口参数才视为 dsh 服务,避免误杀用户其它
-    /// 恰好占用同一端口的 node 进程。
-    /// </summary>
-    internal static bool IsDshCommandLine(string? commandLine, int port)
-    {
-        if (string.IsNullOrWhiteSpace(commandLine)) return false;
-        return commandLine.Contains("dsh", StringComparison.OrdinalIgnoreCase)
-            && commandLine.Contains($"--port {port}", StringComparison.OrdinalIgnoreCase);
-    }
 
     /// <summary>where.exe 探测命令是否在 PATH 中(找不到/超时/异常均视为未安装)。</summary>
     private static bool CommandExists(string command)
