@@ -1,11 +1,12 @@
 using System.Diagnostics;
 using System.IO;
+using DshDesktop.Services;
 using Microsoft.Web.WebView2.Core;
 
 namespace DshDesktop.WebView;
 
 /// <summary>
-/// 统一的 WebView2 接线:设置 + 权限 + 下载 + 弹窗 + 崩溃自愈。
+/// 统一的 WebView2 接线:设置 + 权限 + 下载 + 弹窗 + 崩溃自愈 + 市场重启接管。
 /// 主窗口与插件弹出的内部窗口共用,保证行为一致。
 /// </summary>
 internal static class WebViewSetup
@@ -13,7 +14,8 @@ internal static class WebViewSetup
     /// <summary>渲染进程崩溃自动重载的节流时间戳(避免崩溃死循环,主窗口与弹窗共享)。</summary>
     private static long _lastReloadTick;
 
-    public static void Configure(CoreWebView2 core, string userDataFolder)
+    /// <param name="manager">dsh 进程管理器;空则只做通用接线(单测/无服务场景)。</param>
+    public static void Configure(CoreWebView2 core, string userDataFolder, DshProcessManager? manager = null)
     {
         var settings = core.Settings;
         settings.AreDefaultContextMenusEnabled = true;   // 保留右键菜单(复制/粘贴等)
@@ -77,7 +79,7 @@ internal static class WebViewSetup
                     var deferral = e.GetDeferral();
                     try
                     {
-                        var popup = new PopupWindow(userDataFolder);
+                        var popup = new PopupWindow(userDataFolder, manager);
                         await popup.InitializeAsync();
                         e.NewWindow = popup.Web.CoreWebView2;
                         popup.Show();
@@ -104,5 +106,11 @@ internal static class WebViewSetup
                 }
             }
         };
+
+        // 市场「立即重启」改由壳执行(见 MarketRestartInterceptor)。不挂载的话请求会打到 dsh,
+        // 由市场自己 kill + 另起一个壳跟踪不到的替代进程。须在首次导航前挂上。
+        // DSH_WEB_URL 外部托管时不接管:进程不归壳管,重启该由对方负责。
+        if (manager is not null && !manager.ExternalManaged)
+            MarketRestartInterceptor.Attach(core, manager);
     }
 }

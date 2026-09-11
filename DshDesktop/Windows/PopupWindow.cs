@@ -14,11 +14,13 @@ internal sealed class PopupWindow : Window
     public WebView2 Web { get; }
 
     private readonly string _userDataFolder;
+    private readonly DshProcessManager? _manager;
     private bool _init;
 
-    public PopupWindow(string userDataFolder)
+    public PopupWindow(string userDataFolder, DshProcessManager? manager = null)
     {
         _userDataFolder = userDataFolder;
+        _manager = manager;
         Title = "DeepSeek Harness";
         Width = 900;
         Height = 640;
@@ -35,7 +37,7 @@ internal sealed class PopupWindow : Window
         _init = true;
         var env = await SharedEnvironment.GetAsync(_userDataFolder);
         await Web.EnsureCoreWebView2Async(env);
-        WebViewSetup.Configure(Web.CoreWebView2!, _userDataFolder);
+        WebViewSetup.Configure(Web.CoreWebView2!, _userDataFolder, _manager);
         Web.CoreWebView2!.DocumentTitleChanged += (_, _) =>
         {
             var title = Web.CoreWebView2.DocumentTitle;

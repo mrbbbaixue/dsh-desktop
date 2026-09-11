@@ -218,7 +218,7 @@ public partial class MainWindow : Window
         {
             var env = await SharedEnvironment.GetAsync(_userDataFolder);
             await WebView.EnsureCoreWebView2Async(env);
-            WebViewSetup.Configure(WebView.CoreWebView2!, _userDataFolder);
+            WebViewSetup.Configure(WebView.CoreWebView2!, _userDataFolder, _manager);
             _webReady = true;
             ApplyWebViewBackground();
             return true;

@@ -28,6 +28,8 @@ public sealed class DshProcessManager : IDisposable
 
     private readonly bool _externalManaged;
     private readonly object _gate = new();
+    /// <summary>重启串行闸:托盘与页面(市场一键重启)可能同时点,不允许两次重启交叉。</summary>
+    private readonly SemaphoreSlim _restartGate = new(1, 1);
     private Process? _process;
     private IntPtr _job;
     private DateTime _lastUnexpectedExit = DateTime.MinValue;
@@ -42,6 +44,9 @@ public sealed class DshProcessManager : IDisposable
     public string Url { get; }
     public int Port { get; }
     public ServiceState State { get; private set; } = ServiceState.Stopped;
+
+    /// <summary>外部托管(设置了 DSH_WEB_URL):壳不拉起、不停止,也不接管重启。</summary>
+    public bool ExternalManaged => _externalManaged;
 
     /// <summary>
     /// 托盘「显示/隐藏 dsh 终端」是否可点:有自己拉起的子进程(句柄可能还在绑定中)。
@@ -311,12 +316,27 @@ public sealed class DshProcessManager : IDisposable
         }
     }
 
-    /// <summary>停止 → 重新拉起 → 等待就绪(托盘菜单"重启服务")。</summary>
+    /// <summary>
+    /// 停止 → 重新拉起 → 等待就绪(托盘菜单"重启服务"、市场一键重启)。
+    /// 并发调用只执行一次:后来的直接返回,不制造两次重启交叉。
+    /// </summary>
     public async Task RestartAsync()
     {
-        Log.Info("重启 dsh 服务");
-        await StopAsync();
-        await EnsureRunningAsync();
+        if (!await _restartGate.WaitAsync(TimeSpan.Zero))
+        {
+            Log.Info("已有重启在进行中,忽略重复的重启请求");
+            return;
+        }
+        try
+        {
+            Log.Info("重启 dsh 服务");
+            await StopAsync();
+            await EnsureRunningAsync();
+        }
+        finally
+        {
+            _restartGate.Release();
+        }
     }
 
     /// <summary>
