@@ -34,7 +34,9 @@ $publishArgs = @(
     (Join-Path $root "DshDesktop"),
     "-c", "Release",
     "-r", $Runtime,
-    "-o", $publishDir
+    "-o", $publishDir,
+    # 写进 exe 的文件属性:FileVersion / ProductVersion
+    "-p:Version=$version"
 )
 
 dotnet publish @publishArgs

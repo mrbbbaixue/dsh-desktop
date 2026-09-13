@@ -14,6 +14,11 @@
     <Prefer32Bit>false</Prefer32Bit>
     <AssemblyName>DshDesktop</AssemblyName>
     <RootNamespace>DshDesktop</RootNamespace>
+    <!-- exe 文件属性:版本号由 Scripts/build.ps1 以 -p:Version=<git tag> 注入,直接编译时回退 0.1.0 -->
+    <Version Condition="'$(Version)' == ''">0.1.0</Version>
+    <Product>DshDesktop</Product>
+    <Company>mrbbbaixue</Company>
+    <Copyright>Copyright (c) 2026 mrbbbaixue</Copyright>
     <ApplicationManifest>Properties\app.manifest</ApplicationManifest>
     <ApplicationIcon>Resources\favicon.ico</ApplicationIcon>
     <DebugType>embedded</DebugType>
