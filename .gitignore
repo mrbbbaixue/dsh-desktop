@@ -21,3 +21,6 @@ DshDesktop/WebView2/
 
 # ---- 日志 ----
 *.log
+
+# ---- CodeGraph 索引 ----
+.codegraph/
