@@ -1,9 +1,8 @@
 name: build
 
 on:
+  # 任意分支 push 都编译并上传 artifact(不带过滤器 = 所有分支与 tag)
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]
   pull_request:
 
 # 用 .NET SDK 10 编译;应用目标是 net48(Windows 11 自带)。产物在 build/。
