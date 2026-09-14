@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -8,7 +9,8 @@ using Microsoft.Win32;
 namespace DshDesktop.Tray;
 
 /// <summary>
-/// 系统托盘:服务控制(重启)、显示/隐藏 dsh 终端(后台控制台)、打开窗口、退出。
+/// 系统托盘:服务控制(重启)、显示/隐藏 dsh 终端(后台控制台)、打开窗口、
+/// 在系统默认浏览器打开 dsh 页面、退出。
 /// dsh 服务常驻时关窗隐藏到托盘,进程生命周期由壳自动托管。
 /// 图标按任务栏深浅色实时切换为黑/白剪影(浅色任务栏用黑标,深色用白标);
 /// 同步把主窗口任务栏大图标换为同一套黑白 ICO,保持两处深浅色一致。
@@ -22,6 +24,7 @@ internal sealed class TrayIcon : IDisposable
     private readonly Icon? _white;
     private readonly ToolStripMenuItem _miRestart;
     private readonly ToolStripMenuItem _miTerminal;
+    private readonly ToolStripMenuItem _miBrowser;
     private bool? _lightTaskbar;
     private bool _disposed;
 
@@ -45,9 +48,13 @@ internal sealed class TrayIcon : IDisposable
             _manager.SetConsoleVisible(!_manager.IsConsoleVisible);
             UpdateState();
         };
+        // 地址在点击时才取:dsh 重启后会换一次性 launch-token
+        _miBrowser = new ToolStripMenuItem("在浏览器中打开");
+        _miBrowser.Click += (_, _) => OpenInBrowser();
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("打开窗口", null, (_, _) => openWindow());
+        menu.Items.Add(_miBrowser);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_miRestart);
         menu.Items.Add(_miTerminal);
@@ -109,6 +116,21 @@ internal sealed class TrayIcon : IDisposable
         _window?.ApplyTaskbarIcon(light);
     }
 
+    /// <summary>用系统默认浏览器打开 dsh 页面(带 launch-token 的 session URL)。</summary>
+    private void OpenInBrowser()
+    {
+        var url = _manager.NavigateUrl;
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            Log.Info($"在浏览器中打开: {url}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"打开浏览器失败: {ex.Message}");
+        }
+    }
+
     /// <summary>根据服务状态刷新托盘提示文本与菜单可用性(状态事件可能来自线程池)。</summary>
     private void UpdateState()
     {
@@ -129,6 +151,8 @@ internal sealed class TrayIcon : IDisposable
         // 启动中即可看 npx 下载等输出;句柄已绑上时即使状态抖动也可切换
         _miTerminal.Enabled = _manager.CanToggleConsole;
         _miTerminal.Text = _manager.IsConsoleVisible ? "隐藏 dsh 终端" : "显示 dsh 终端";
+        // 页面要 dsh 服务在跑才能打开
+        _miBrowser.Enabled = s == DshProcessManager.ServiceState.Running;
     }
 
     public void Dispose()
