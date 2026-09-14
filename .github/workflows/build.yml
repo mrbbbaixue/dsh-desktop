@@ -36,10 +36,11 @@ jobs:
       - name: Publish
         shell: pwsh
         run: |
-          $tagArgs = if ($env:GITHUB_REF.StartsWith('refs/tags/')) { @('-Tag', $env:GITHUB_REF_NAME) } else { @() }
+          # 打 tag 时把版本号传进去(空则 build.ps1 自行 git describe)
+          $tag = if ($env:GITHUB_REF.StartsWith('refs/tags/')) { $env:GITHUB_REF_NAME } else { '' }
           # 两套图标各出一个包(托盘图标不变,仅程序图标与任务栏图标不同)
-          ./Scripts/build.ps1 @tagArgs
-          ./Scripts/build.ps1 @tagArgs -IconSet deepseek
+          ./Scripts/build.ps1 -Tag $tag
+          ./Scripts/build.ps1 -Tag $tag -IconSet deepseek
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v5
