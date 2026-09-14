@@ -25,7 +25,10 @@ git clone https://github.com/mrbbbaixue/dsh-desktop.git
 cd dsh-desktop
 dotnet test                        # 单元测试
 ./Scripts/build.ps1                # 打包 zip + SHA256
+./Scripts/build.ps1 -IconSet deepseek   # 第二套图标(程序图标 + 任务栏图标),托盘图标不变
 ```
+
+发布包:`dsh-desktop-<版本>-win-x64.zip` 与 `dsh-desktop-deepseek-<版本>-win-x64.zip` 仅图标集不同。
 
 ## 常见问题
 

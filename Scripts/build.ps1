@@ -1,12 +1,16 @@
 # 本地发布:
 #   ./Scripts/build.ps1
+#   ./Scripts/build.ps1 -IconSet deepseek     # 第二套图标(程序 + 任务栏),托盘图标不变
 # CI 发布(GitHub Actions):
-#   ./Scripts/build.ps1 [-Tag v1.2.0]
+#   ./Scripts/build.ps1 [-Tag v1.2.0] [-IconSet deepseek]
 param(
     [string]$Runtime = "win-x64",
     [string]$OutputDir = "build",
     # CI 打 tag 时可显式传入(如 v1.1.0);空则 git describe
-    [string]$Tag = ""
+    [string]$Tag = "",
+    # 图标集:default = DeepSeek 鲸鱼;deepseek = 拟人形象(程序图标 + 窗口/任务栏图标)
+    [ValidateSet("default", "deepseek")]
+    [string]$IconSet = "default"
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,22 +31,26 @@ if (-not [string]::IsNullOrWhiteSpace($Tag)) {
     $version = $version.TrimStart('v')
 }
 
-Write-Host "发布 DshDesktop $version ($Runtime, net48 Costura 单文件)..." -ForegroundColor Cyan
+Write-Host "发布 DshDesktop $version ($Runtime, net48 Costura 单文件, 图标集 $IconSet)..." -ForegroundColor Cyan
 
 $publishDir = Join-Path $root "$OutputDir/publish"
+# 同一次构建可能连编两套图标:清掉上一套的产物,避免残留
+if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
 $publishArgs = @(
     (Join-Path $root "DshDesktop"),
     "-c", "Release",
     "-r", $Runtime,
     "-o", $publishDir,
     # 写进 exe 的文件属性:FileVersion / ProductVersion
-    "-p:Version=$version"
+    "-p:Version=$version",
+    "-p:IconSet=$IconSet"
 )
 
 dotnet publish @publishArgs
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish 失败" }
 
-$zipName = "dsh-desktop-$version-$Runtime.zip"
+if ($IconSet -eq "default") { $suffix = "" } else { $suffix = "-$IconSet" }
+$zipName = "dsh-desktop$suffix-$version-$Runtime.zip"
 $zipPath = Join-Path $root "$OutputDir/$zipName"
 Compress-Archive -Path "$publishDir/*" -DestinationPath $zipPath -Force
 

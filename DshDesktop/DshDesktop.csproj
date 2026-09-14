@@ -20,7 +20,11 @@
     <Company>mrbbbaixue</Company>
     <Copyright>Copyright (c) 2026 mrbbbaixue</Copyright>
     <ApplicationManifest>Properties\app.manifest</ApplicationManifest>
-    <ApplicationIcon>Resources\favicon.ico</ApplicationIcon>
+    <!-- 图标集(default / deepseek):换程序图标、窗口图标与任务栏图标,托盘图标不变。
+         由 Scripts/build.ps1 -IconSet 注入。 -->
+    <ApplicationIcon Condition="'$(IconSet)' == 'deepseek'">Resources\deepseek.ico</ApplicationIcon>
+    <ApplicationIcon Condition="'$(IconSet)' != 'deepseek'">Resources\favicon.ico</ApplicationIcon>
+    <DefineConstants Condition="'$(IconSet)' == 'deepseek'">$(DefineConstants);ICONSET_DEEPSEEK</DefineConstants>
     <DebugType>embedded</DebugType>
     <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
@@ -33,8 +37,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- 窗口图标:彩色 256;托盘图标:制作期烘焙的固定黑/白两套多尺寸 ico,运行时不再染色 -->
-    <EmbeddedResource Include="Resources\favicon.png" />
+    <!-- 窗口图标:彩色 256(按图标集二选一);托盘图标:制作期烘焙的固定黑/白两套多尺寸 ico,运行时不再染色 -->
+    <EmbeddedResource Include="Resources\favicon.png" Condition="'$(IconSet)' != 'deepseek'" />
+    <EmbeddedResource Include="Resources\deepseek.png" Condition="'$(IconSet)' == 'deepseek'" />
     <EmbeddedResource Include="Resources\favicon-black.ico" />
     <EmbeddedResource Include="Resources\favicon-white.ico" />
   </ItemGroup>

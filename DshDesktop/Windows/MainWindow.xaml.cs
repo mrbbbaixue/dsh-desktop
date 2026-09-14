@@ -99,11 +99,12 @@ public partial class MainWindow : Window
         return IntPtr.Zero;
     }
 
-    /// <summary>把任务栏大图标换为单色剪影(与托盘图标同主题一致)。原彩色图标保留,Dispose 时还原。</summary>
+    /// <summary>把任务栏大图标换为图标集对应的大图标:default 集是与托盘同主题的剪影,
+    /// deepseek 集保持原色。原图标保留,Dispose 时还原。</summary>
     public void ApplyTaskbarIcon(bool lightTaskbar)
     {
         _colorIcon ??= Icon;
-        Icon = AppIcons.LoadMonoIconSource(lightTaskbar) ?? Icon;
+        Icon = AppIcons.LoadTaskbarIcon(lightTaskbar) ?? Icon;
     }
 
     /// <summary>还原彩色主图标(退出清空托盘时调用)。</summary>
