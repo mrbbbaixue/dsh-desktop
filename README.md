@@ -1,3 +1,5 @@
+<img src="./DshDesktop/Resources/deepseek.png" width="256" height="256" alt="icon" />
+
 # dsh-desktop
 
 [![build](https://github.com/mrbbbaixue/dsh-desktop/actions/workflows/build.yml/badge.svg)](https://github.com/mrbbbaixue/dsh-desktop/actions/workflows/build.yml)
