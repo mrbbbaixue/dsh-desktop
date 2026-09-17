@@ -222,7 +222,7 @@ public static class ShellLogic
 
 
     /// <summary>where.exe 探测命令是否在 PATH 中(找不到/超时/异常均视为未安装)。</summary>
-    private static bool CommandExists(string command)
+    internal static bool CommandExists(string command)
     {
         try
         {
@@ -232,6 +232,7 @@ public static class ShellLogic
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                EnvironmentVariables = { ["PATH"] = SystemPath.Current() },
             });
             if (p is null) return false;
             var output = p.StandardOutput.ReadToEnd();
@@ -244,17 +245,39 @@ public static class ShellLogic
         }
     }
 
-    /// <summary>运行命令并捕获 stdout;退出码非 0 / 找不到命令 / 异常 → null。</summary>
-    private static string? RunForOutput(string command, string arguments)
+    /// <summary>命令可执行文件路径(where.exe 的第一条结果);找不到返回 null。</summary>
+    internal static string? WherePath(string command)
     {
+        var output = RunForOutput("where.exe", command);
+        if (string.IsNullOrWhiteSpace(output)) return null;
+        foreach (var line in output!.Split('\n'))
+        {
+            var path = line.Trim();
+            if (path.Length > 0) return path;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// 运行命令并捕获 stdout;退出码非 0 / 找不到命令 / 异常 → null。
+    /// .cmd/.bat(npm.cmd、dsh.cmd 等)必须先经 cmd.exe,Win32 不能直接执行批处理;
+    /// PATH 取 SystemPath.Current(),保证刚装好的工具链立即可见。
+    /// </summary>
+    internal static string? RunForOutput(string command, string arguments)
+    {
+        var isScript = command.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)
+            || command.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
+        var file = isScript ? "cmd.exe" : command;
+        var args = isScript ? $"/d /c chcp 65001>nul & {command} {arguments}" : arguments;
         try
         {
-            using var p = Process.Start(new ProcessStartInfo(command, arguments)
+            using var p = Process.Start(new ProcessStartInfo(file, args)
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                EnvironmentVariables = { ["PATH"] = SystemPath.Current() },
             });
             if (p is null) return null;
             var output = p.StandardOutput.ReadToEnd();

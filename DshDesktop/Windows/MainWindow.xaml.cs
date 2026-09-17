@@ -170,7 +170,8 @@ public partial class MainWindow : Window
         StatusOverlay.Visibility = Visibility.Visible;
         StatusProgress.IsIndeterminate = true;
         StatusText.Text = "正在启动 dsh 服务…";
-        var probe = ShellLogic.ProbeRuntime();
+        // 探测要起 node/where 子进程,放线程池,别卡 UI 线程(遮罩上的进度条要能继续动)
+        var probe = await Task.Run(() => ShellLogic.ProbeRuntime());
         Log.Info($"环境检测: {ShellLogic.FormatRuntimeSummary(probe)}");
         EnvStatusText.Text = ShellLogic.FormatRuntimeSummary(probe);
 
@@ -192,7 +193,7 @@ public partial class MainWindow : Window
         {
             StatusProgress.IsIndeterminate = false;
             // 再探测一次(用户可能在等待期间装好了 Node),失败提示按原因区分
-            probe = ShellLogic.ProbeRuntime();
+            probe = await Task.Run(() => ShellLogic.ProbeRuntime());
             EnvStatusText.Text = ShellLogic.FormatRuntimeSummary(probe);
             if (!probe.NodeFound)
             {

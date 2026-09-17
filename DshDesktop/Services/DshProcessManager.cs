@@ -158,6 +158,8 @@ public sealed class DshProcessManager : IDisposable
     /// <summary>
     /// 确保服务运行:拉起自己的子进程并等待就绪(最长 90s)。
     /// 不接管端口上已有的其它进程。并发调用幂等(Starting/Running 时直接返回)。
+    /// 启动体放线程池:里面有环境探测(起 node/where 子进程)与 taskkill 等待,
+    /// 而调用方是托盘菜单/诊断窗口,都在 UI 线程上。
     /// </summary>
     public async Task EnsureRunningAsync()
     {
@@ -172,7 +174,7 @@ public sealed class DshProcessManager : IDisposable
             if (State is ServiceState.Starting or ServiceState.Running) return;
             SetState(ServiceState.Starting);
         }
-        await StartCoreAsync();
+        await Task.Run(StartCoreAsync);
     }
 
     private async Task StartCoreAsync()
@@ -308,7 +310,8 @@ public sealed class DshProcessManager : IDisposable
             SetState(ServiceState.Stopping);
         }
         Log.Info("停止 dsh 服务(只结束自己的子进程)");
-        KillOwnProcess();
+        // taskkill /T 要等子进程树退出(最长 10s),放线程池,别卡调用方的 UI 线程
+        await Task.Run(KillOwnProcess);
         await WaitPortClosedAsync(TimeSpan.FromSeconds(10));
         lock (_gate)
         {
@@ -554,18 +557,21 @@ public sealed class DshProcessManager : IDisposable
     /// 启动命令解析:优先 PATH 中的 dsh;否则 npx 回退(可注入 npm 镜像源)。
     /// 端口显式取自调用方解析的 Port(与导航地址同源),不会出现"服务起了但窗口访问的
     /// 是另一个端口"的错位。Node.js 与 dsh 都不可用 → 立即抛错,避免静默失败后干等 90 秒。
+    /// PATH 用 SystemPath.Current()(注册表里的最新值):诊断窗口刚装好的 Node/dsh
+    /// 不必重启本程序就能被这个子进程找到。
     /// </summary>
     private LaunchPlan BuildLaunchPlanCore(int port)
     {
         // 参数与窗口导航地址同源(ShellLogic.BuildDshWebArgs),端口不会错位
         var args = ShellLogic.BuildDshWebArgs(port);
         var probe = ShellLogic.ProbeRuntime();
+        var env = new Dictionary<string, string> { ["PATH"] = SystemPath.Current() };
 
         if (probe.DshFound)
         {
             if (!probe.NodeFound)
                 Log.Error("PATH 中存在 dsh,但未检测到 Node.js —— dsh 可能无法运行,请确认 Node.js 已安装");
-            return new LaunchPlan("dsh", args, new Dictionary<string, string>());
+            return new LaunchPlan("dsh", args, env);
         }
 
         if (!probe.NodeFound)
@@ -573,7 +579,6 @@ public sealed class DshProcessManager : IDisposable
                 "未检测到 Node.js(PATH 中也没有 dsh),无法在后台启动 dsh 服务;请先安装 Node.js 后重试");
 
         // npx 回退:registry 通过环境变量注入(npx 只读 npm_config_registry,不能当命令参数追加)
-        var env = new Dictionary<string, string>();
         var registry = ShellLogic.ResolveNpmRegistry(Environment.GetEnvironmentVariable("DSH_NPM_REGISTRY"));
         if (registry is not null)
         {

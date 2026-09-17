@@ -17,6 +17,59 @@ public class WindowPrefsTests
         Assert.Equal(WindowPrefs.DefaultWidth, prefs.Width);
         Assert.Equal(WindowPrefs.DefaultHeight, prefs.Height);
         Assert.False(prefs.Maximized);
+        Assert.False(prefs.FirstRunDone);
+    }
+
+    [Fact]
+    public void SaveThenLoad_RoundTripsFirstRunDone()
+    {
+        var path = TempPath();
+        try
+        {
+            new WindowPrefs(path) { FirstRunDone = true }.Save();
+
+            var loaded = new WindowPrefs(path);
+            Assert.True(loaded.TryLoad());
+            Assert.True(loaded.FirstRunDone);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void TryLoad_LegacyFileWithoutFirstRunDone_TreatedAsFirstRun()
+    {
+        var path = TempPath();
+        try
+        {
+            File.WriteAllText(path, "<desktop><width>900</width><height>700</height></desktop>");
+            var prefs = new WindowPrefs(path);
+            Assert.True(prefs.TryLoad());
+            Assert.False(prefs.FirstRunDone);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Save_WritesFirstRunDoneElement()
+    {
+        var path = TempPath();
+        try
+        {
+            new WindowPrefs(path) { FirstRunDone = true }.Save();
+            var doc = new System.Xml.XmlDocument();
+            doc.Load(path);
+            Assert.Equal("true", doc.DocumentElement!.SelectSingleNode("firstRunDone")!.InnerText);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     [Fact]

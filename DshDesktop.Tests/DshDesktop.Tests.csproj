@@ -21,4 +21,9 @@
     <ProjectReference Include="..\DshDesktop\DshDesktop.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- ThemePalette 用 WPF 的 Color(System.Windows.Media) -->
+    <Reference Include="PresentationCore" />
+  </ItemGroup>
+
 </Project>

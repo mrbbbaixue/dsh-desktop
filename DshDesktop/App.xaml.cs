@@ -19,6 +19,8 @@ public partial class App : Application
     private DshProcessManager? _manager;
     private TrayIcon? _tray;
     private MainWindow? _window;
+    private DiagnosticsWindow? _diagnostics;
+    private WindowPrefs? _prefs;
     private bool _exitRequested;
 
     public App()
@@ -47,8 +49,14 @@ public partial class App : Application
         Log.Init();
         Log.Info($"DshDesktop 启动: url={_url} args={string.Join(" ", e.Args)}");
         ClearLegacyAutostart();
+        // 窗口状态与"是否首次运行"共用一份配置实例:主窗口退出时写回,
+        // 若各持一份,主窗口那份会把首次运行标记覆盖回 false(每次启动都弹诊断窗口)。
+        _prefs = new WindowPrefs();
+        _prefs.TryLoad();
+        var firstRun = !_prefs.FirstRunDone;
         // 启动即探测 Node.js / npm / dsh,一行写清"已安装还是未安装"。
-        Log.Info($"环境检测: {ShellLogic.FormatRuntimeSummary(ShellLogic.ProbeRuntime())}");
+        // 探测要起 node/where 子进程,放线程池,别拖慢窗口出现。
+        _ = Task.Run(() => Log.Info($"环境检测: {ShellLogic.FormatRuntimeSummary(ShellLogic.ProbeRuntime())}"));
 
         _manager!.StateChanged += state =>
         {
@@ -57,10 +65,20 @@ public partial class App : Application
                 Dispatcher.InvokeAsync(() => _window?.ReloadWhenReadyAsync());
         };
 
-        _tray = new TrayIcon(_manager, openWindow: ShowMainWindow, exitApp: RequestExit);
+        _tray = new TrayIcon(_manager, openWindow: ShowMainWindow,
+            openDiagnostics: ShowDiagnosticsWindow, exitApp: RequestExit);
         _tray.Show();
         ShowMainWindow();
         _tray.AttachWindow(_window!);
+
+        // 首次运行自动弹诊断窗口(判断依据是配置文件里的 firstRunDone)
+        if (firstRun)
+        {
+            Log.Info("首次运行:自动打开诊断窗口");
+            _prefs.FirstRunDone = true;
+            _prefs.Save();
+            ShowDiagnosticsWindow();
+        }
 
         // 后台拉起 dsh 服务(未启动时)
         _ = _manager.EnsureRunningAsync();
@@ -86,7 +104,7 @@ public partial class App : Application
         if (_manager is null) return;
         if (_window is null)
         {
-            _window = new MainWindow(_manager);
+            _window = new MainWindow(_manager, _prefs);
             _window.Closing += (_, ev) =>
             {
                 if (_exitRequested) return;
@@ -99,6 +117,23 @@ public partial class App : Application
             return;
         }
         _window.Reveal();
+    }
+
+    /// <summary>显示诊断窗口:单例,已存在只带到前台;关闭即销毁,下次再点重建。</summary>
+    private void ShowDiagnosticsWindow()
+    {
+        if (_diagnostics is not null)
+        {
+            if (_diagnostics.WindowState == WindowState.Minimized)
+                _diagnostics.WindowState = WindowState.Normal;
+            _diagnostics.Show();
+            _diagnostics.Activate();
+            return;
+        }
+        _diagnostics = new DiagnosticsWindow(_manager);
+        _diagnostics.Closed += (_, _) => _diagnostics = null;
+        _diagnostics.Show();
+        _diagnostics.Activate();
     }
 
     /// <summary>清掉旧版写入 HKCU Run 的开机自启项,避免升级后仍被拉起。</summary>

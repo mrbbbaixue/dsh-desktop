@@ -9,7 +9,7 @@ using Microsoft.Win32;
 namespace DshDesktop.Tray;
 
 /// <summary>
-/// 系统托盘:服务控制(重启)、显示/隐藏 dsh 终端(后台控制台)、打开窗口、
+/// 系统托盘:服务控制(重启)、显示/隐藏 dsh 终端(后台控制台)、打开窗口、打开诊断窗口、
 /// 在系统默认浏览器打开 dsh 页面、退出。
 /// dsh 服务常驻时关窗隐藏到托盘,进程生命周期由壳自动托管。
 /// 图标按任务栏深浅色实时切换为黑/白剪影(浅色任务栏用黑标,深色用白标),与图标集无关;
@@ -28,7 +28,8 @@ internal sealed class TrayIcon : IDisposable
     private bool? _lightTaskbar;
     private bool _disposed;
 
-    public TrayIcon(DshProcessManager manager, Action openWindow, Action exitApp, MainWindow? window = null)
+    public TrayIcon(DshProcessManager manager, Action openWindow, Action openDiagnostics, Action exitApp,
+        MainWindow? window = null)
     {
         _manager = manager;
         _black = AppIcons.LoadMonoIcon(lightTaskbar: true);
@@ -54,6 +55,7 @@ internal sealed class TrayIcon : IDisposable
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("打开窗口", null, (_, _) => openWindow());
+        menu.Items.Add("诊断窗口", null, (_, _) => openDiagnostics());
         menu.Items.Add(_miBrowser);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_miRestart);

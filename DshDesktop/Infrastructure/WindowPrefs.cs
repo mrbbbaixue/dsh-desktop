@@ -29,6 +29,10 @@ public sealed class WindowPrefs
     [XmlElement("maximized")]
     public bool Maximized { get; set; }
 
+    /// <summary>已跑过一次启动(首次运行自动弹诊断窗口的判断依据);老配置没有该元素 → false。</summary>
+    [XmlElement("firstRunDone")]
+    public bool FirstRunDone { get; set; }
+
     /// <summary>供 XmlSerializer 反序列化使用;序列化输出不包含路径。</summary>
     public WindowPrefs() : this((string?)null) { }
 
@@ -51,6 +55,7 @@ public sealed class WindowPrefs
             Width = loaded.Width;
             Height = loaded.Height;
             Maximized = loaded.Maximized;
+            FirstRunDone = loaded.FirstRunDone;
             return true;
         }
         catch

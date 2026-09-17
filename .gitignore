@@ -24,3 +24,6 @@ DshDesktop/WebView2/
 
 # ---- CodeGraph 索引 ----
 .codegraph/
+
+# ---- ZCode 会话产物 ----
+.zcode/
