@@ -43,6 +43,29 @@ public class EnvReportTests
         Assert.Equal("缺少必需组件", Report(node: false, npm: false, dsh: false).Summary);
     }
 
+    [Fact]
+    public void AllReady_WhenEveryItemOk_IsTrue()
+    {
+        var report = new EnvReport(
+        [
+            Item(ToolKind.Node, true), Item(ToolKind.Npm, true),
+            Item(ToolKind.WebView2, true), Item(ToolKind.Dsh, true),
+        ]);
+        Assert.True(report.AllReady);
+    }
+
+    [Fact]
+    public void AllReady_WhenWebView2Missing_IsFalseButNoInstallNeeded()
+    {
+        var report = new EnvReport(
+        [
+            Item(ToolKind.Node, true), Item(ToolKind.Npm, true),
+            Item(ToolKind.WebView2, false), Item(ToolKind.Dsh, true),
+        ]);
+        Assert.False(report.AllReady);
+        Assert.False(report.NeedsInstall);
+    }
+
     [Theory]
     [InlineData(true, "v24.21.0", "已安装 v24.21.0")]
     [InlineData(true, "  v24.21.0  ", "已安装 v24.21.0")]

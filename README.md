@@ -13,7 +13,7 @@
 - ⚙️ **托管 dsh 子进程** — 自启自停,只管理自己的进程树,不接管、不误杀端口上其它进程,意外退出自动重启
 - 🖥️ **系统托盘** — 右键菜单重启 dsh 服务、显示/隐藏 dsh 终端(后台控制台,默认隐藏)、打开窗口、打开诊断窗口、在浏览器中打开 dsh 页面、退出
 - 🔌 **自动拉起 + 环境检测** — 服务未启动时自动启动并等待就绪;启动页显示 Node.js / npm / dsh 安装状态
-- 🩺 **诊断窗口** — 一屏看清 Node.js / npm / WebView2 / dsh 的安装情况,缺什么一键装(Node 走 winget,国内可用 npmmirror 镜像),进度同时显示在窗口与任务栏按钮上;首次运行会自动弹出
+- 🩺 **诊断窗口** — 一屏看清 Node.js / npm / WebView2 / dsh 的安装情况,缺什么一键装(Node 走 winget,国内可用 npmmirror 镜像),进度同时显示在窗口与任务栏按钮上;首次运行若诊断有缺项会自动弹出,环境完整则不打扰
 
 ## 安装 / 运行
 
@@ -23,7 +23,7 @@ dsh 不必全局安装:优先用 PATH 中的 `dsh`,否则自动回退 `npx -y @d
 
 ## 诊断窗口
 
-托盘菜单「诊断窗口」打开;首次运行(配置文件 `%USERPROFILE%\.dsh\desktop.xml` 里没有 `firstRunDone`)会自动弹一次。
+托盘菜单「诊断窗口」打开;首次运行(配置文件 `%USERPROFILE%\.dsh\desktop.xml` 里没有 `firstRunDone`)会先诊断一次,四项(含 WebView2)全就绪就不弹窗口,有缺项才自动弹出。
 
 - **环境诊断** — Node.js / npm / WebView2 Runtime / dsh 四项,显示版本与路径,「重新检测」随时刷新。dsh 服务状态不在其中:壳会自己拉起服务,拿到启动链接即视为成功
 - **一键安装** — 只装缺的,一律装到系统(Node.js 用 winget 装 `OpenJS.NodeJS.LTS`,npm/npx 随附;dsh 用 `npm install -g` 装到 `%APPDATA%\npm`)。系统级安装会弹一次 UAC,点「是」即可;装完自动重新检测并重启 dsh 服务,无需重启本程序

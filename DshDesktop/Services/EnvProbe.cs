@@ -23,6 +23,9 @@ internal sealed record EnvReport(IReadOnlyList<EnvItem> Items)
     /// <summary>一键安装是否还有活要干(Node/npm/dsh 三者均已就绪时无需安装)。</summary>
     public bool NeedsInstall => !NodeReady || !DshReady;
 
+    /// <summary>全部诊断项(含 WebView2)均就绪:首次运行据此决定要不要自动弹诊断窗口。</summary>
+    public bool AllReady => Items.All(i => i.Ok);
+
     public bool IsOk(ToolKind kind) => Items.Any(i => i.Kind == kind && i.Ok);
 
     public string Summary => NeedsInstall ? "缺少必需组件" : "环境完整";

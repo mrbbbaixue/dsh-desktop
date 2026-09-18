@@ -54,9 +54,27 @@ public partial class App : Application
         _prefs = new WindowPrefs();
         _prefs.TryLoad();
         var firstRun = !_prefs.FirstRunDone;
+        if (firstRun)
+        {
+            _prefs.FirstRunDone = true;
+            _prefs.Save();
+        }
         // 启动即探测 Node.js / npm / dsh,一行写清"已安装还是未安装"。
         // 探测要起 node/where 子进程,放线程池,别拖慢窗口出现。
-        _ = Task.Run(() => Log.Info($"环境检测: {ShellLogic.FormatRuntimeSummary(ShellLogic.ProbeRuntime())}"));
+        // 首次运行再跑一次完整诊断:环境完整就不弹诊断窗口,缺东西才弹(缺 WebView2 时页面起不来,也得弹)。
+        _ = Task.Run(() =>
+        {
+            Log.Info($"环境检测: {ShellLogic.FormatRuntimeSummary(ShellLogic.ProbeRuntime())}");
+            if (!firstRun) return;
+            var report = EnvProbe.Run();
+            if (report.AllReady)
+            {
+                Log.Info("首次运行:环境完整,不打开诊断窗口");
+                return;
+            }
+            Log.Info("首次运行:环境不完整,自动打开诊断窗口");
+            Dispatcher.InvokeAsync(ShowDiagnosticsWindow);
+        });
 
         _manager!.StateChanged += state =>
         {
@@ -70,15 +88,6 @@ public partial class App : Application
         _tray.Show();
         ShowMainWindow();
         _tray.AttachWindow(_window!);
-
-        // 首次运行自动弹诊断窗口(判断依据是配置文件里的 firstRunDone)
-        if (firstRun)
-        {
-            Log.Info("首次运行:自动打开诊断窗口");
-            _prefs.FirstRunDone = true;
-            _prefs.Save();
-            ShowDiagnosticsWindow();
-        }
 
         // 后台拉起 dsh 服务(未启动时)
         _ = _manager.EnsureRunningAsync();
